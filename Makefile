@@ -1,9 +1,9 @@
 all: paper code
 
-paper:
+paper: design-spec.tex
 	texi2pdf -c design-spec.tex
 
-code:
+code: sequential-kmeans.cpp 
 	g++ -std=c++11 sequential-kmeans.cpp
 
 .PHONY: clean

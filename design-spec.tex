@@ -8,28 +8,6 @@
 \documentclass[11pt]{article}
 \usepackage{amsfonts}
 \usepackage{mathtools}
-\usepackage{listings}
-\usepackage{color}
-
-\lstset{frame=tb,
-  language=C++,
-  aboveskip=3mm,
-  belowskip=3mm,
-  showstringspaces=false,
-  columns=flexible,
-  basicstyle={\small\ttfamily},
-  numbers=none,
-  numberstyle=\tiny\color{gray},
-  keywordstyle=\color{blue},
-  commentstyle=\color{green},
-  stringstyle=\color{red},
-  breaklines=true,
-  breakatwhitespace=true,
-  tabsize=3
-}
-
-
-
 
 \begin{document}
 \maketitle
@@ -60,6 +38,14 @@ it is less computationally intensive to convert the image to the YUV color space
 do a comparison (euclidean distance) between points than it would have been to do
 the same in RGB colorspace. 
 
+I did not time the colorspace conversions given the fact that it is not relevant to the
+immediate problem (K-Means clustering), however the conversion would be easily 
+parallelizable. 
+
+For a visual indication of the result of the k-means clustering, I colorized the clusters
+based upon their mean color value along with a constant luma value. This was also omitted
+from the timing of the runtime.
+
 \subsection{Sample Image}
 
 \begin{figure}
@@ -76,10 +62,8 @@ the same in RGB colorspace.
     \label{fig:fruit-segmented}
 \end{figure}
 
-This image was segmented based on 5 coordinates hand-picked from within the 
-image. The coloration is a fixed luma value (Y) and the average chroma value (U and V)
-for the clusters that were found. The average runtime over 30 runs for processing this 
-image was 3.026 seconds. 
+This image was segmented based on 5 coordinates that were hand-picked as input to the program.
+The average runtime over 30 runs for processing this image was 3.026 seconds. 
 
 \subsection{Code}
 
