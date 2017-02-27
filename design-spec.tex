@@ -8,6 +8,7 @@
 \documentclass[11pt]{article}
 \usepackage{amsfonts}
 \usepackage{mathtools}
+\newcommand{\BigO}[1]{\ensuremath{\operatorname{O}\bigl(#1\bigr)}}
 
 \begin{document}
 \maketitle
@@ -36,11 +37,11 @@ The algorithm can be implemented in three steps:
 I wrote a sequential reference in C++ in order to achieve a baseline. I found that
 it is less computationally intensive to convert the image to the YUV color space and
 do a comparison (euclidean distance) between points than it would have been to do
-the same in RGB colorspace. 
+the same in RGB colorspace.
 
 I did not time the colorspace conversions given the fact that it is not relevant to the
-immediate problem (K-Means clustering), however the conversion would be easily 
-parallelizable. 
+immediate problem (K-Means clustering), however the conversion would be easily
+parallelizable.
 
 For a visual indication of the result of the k-means clustering, I colorized the clusters
 based upon their mean color value along with a constant luma value. This was also omitted
@@ -48,14 +49,14 @@ from the timing of the runtime.
 
 \subsection{Sample Image}
 
-\begin{figure}
+\begin{figure}[h]
     \centering
     \includegraphics[width=0.6\textwidth]{fruit.png}
     \caption{Image\cite{fruit} before segmentation}
     \label{fig:fruit}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[h]
     \centering
     \includegraphics[width=0.6\textwidth]{fruit-segmented.png}
     \caption{Image after segmentation}
@@ -63,13 +64,38 @@ from the timing of the runtime.
 \end{figure}
 
 This image was segmented based on 5 coordinates that were hand-picked as input to the program.
-The average runtime over 30 runs for processing this image was 3.026 seconds. 
+The average runtime over 30 runs for processing this image was 3.026 seconds.
+
+See \emph{results.txt} for individual runtime samples.
 
 \subsection{Code}
 
 See \emph{sequential-kmeans.cpp} for the sequential code reference implementation.
 
 \section{Complexity Analysis}
+
+\subsection{Algorithmic Complexity}
+
+There are two primary stages of this algorithm, and I will analyize each of them individually.
+
+\subsubsection{Clustering}
+
+The first stage is clustering each pixel in the image with an associated group. For
+each pixel $x_i$ in the image, we compute the euclidean distance between $x_i$
+and each centroid $c_i$ with dimensionality $D$.
+
+$\BigO{NKD}$
+
+Where $N$ is the number of pixels in the image and $K$ is the number of centroids. As
+previously mentioned, there is a slight reduction in the algorithmic complexity by
+reducing the dimensionality of the colorspace from 3 (RGB) to 2 (U and V of YUV).
+
+$D$ could technically be omitted given that it is a constant that is likely smaller
+than $K$ and likely significantly smaller than $N$.
+
+\subsubsection{Mean centroid calculation}
+
+The second stage is to calculate the average value for all pixels in a particular cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$ where we are calculating a summation of $D$ values over $N$ data points.
 
 \section{Parallel Pseudo-Code}
 
@@ -83,9 +109,13 @@ See \emph{parallel-kmeans.cl} for the parallel pseudo-code implementation.
   \emph{k-means++: The Advantages of Careful Seeding},
   http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf
 
+\bibitem{mipro}
+  J. Sirotkovi, H.Dujmi, V. Papi
+  \emph{K-Means Image Segmentation on Massively Parallel GPU Architecture}
+
 \bibitem{fruit}
   Didriks,
-  Fruit Salad,
+  \emph{Fruit Salad},
   https://flic.kr/p/a6W1Te
 
 \end{thebibliography}
