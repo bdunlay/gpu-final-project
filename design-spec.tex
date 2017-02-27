@@ -13,6 +13,19 @@
 \begin{document}
 \maketitle
 
+\section*{Introduction}
+I spent much of my time preparing for this design spec by implementing the algorithm in
+C++ to get a sequential reference. What I found was that the algorithm itself is actually
+fairly simple, and it naturally benefits from the parallelism provided by GPUs due to
+the inherent data independence in evaluating mean euclidean distance for each point.
+
+What I found difficult was the book-keeping of centroid assignment. Either each pixel
+in global memory must be annotated with its centroid and processed sequentially, or independent
+vectors must be formed (with synchronization) that can be re-submitted to the GPU for processing.
+
+I have outlined a half-GPU half-CPU implementation, but I am going to experiment
+in the development of my parallel algorithm with synchronizing writes to shared memory vectors.
+
 \section{K-Means Equations}
 
 K-means is a clustering algorithm. Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim to choose $k$ centers $C$ so as to minimize the following function \cite{arthur}:
@@ -49,14 +62,14 @@ from the timing of the runtime.
 
 \subsection{Sample Image}
 
-\begin{figure}[h]
+\begin{figure}[ht]
     \centering
     \includegraphics[width=0.6\textwidth]{fruit.png}
     \caption{Image\cite{fruit} before segmentation}
     \label{fig:fruit}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[ht]
     \centering
     \includegraphics[width=0.6\textwidth]{fruit-segmented.png}
     \caption{Image after segmentation}
@@ -77,6 +90,9 @@ See \emph{sequential-kmeans.cpp} for the sequential code reference implementatio
 \subsection{Algorithmic Complexity}
 
 There are two primary stages of this algorithm, and I will analyize each of them individually.
+It should be noted that sinces the algorithm is iterative until convergence is reached, there
+is a unknown factor in which we will recalculate the following two steps. In most cases it
+should be much less than N.
 
 \subsubsection{Clustering}
 
@@ -97,10 +113,17 @@ than $K$ and likely significantly smaller than $N$.
 
 The second stage is to calculate the average value for all pixels in a particular cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$ where we are calculating a summation of $D$ values over $N$ data points.
 
+\subsection{Arithmetic Intensity}
+
+The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4) square root. $\text{FLOPS} = K(3D+1)$.
+
+The data access of the clustering step is $KD+D$ reads (where one byte is read per dimension) and the $1$ write (the cluster id) for a total of $KD+D+1$.
+
+The AI is therefore $\frac{K3D+K}{KD+D+1}$
+
 \section{Parallel Pseudo-Code}
 
 See \emph{parallel-kmeans.cl} for the parallel pseudo-code implementation.
-
 
 \begin{thebibliography}{9}
 
