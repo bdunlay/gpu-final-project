@@ -818,43 +818,80 @@ int _tmain(int argc, TCHAR* argv[])
 	getchar();
 	
 	/*
-	 * Read file, convert to YUV
+	 * Get a file to process
 	 */
-	std::string filename;
-	std::string default_file = "U:\\gpu-final-project\\fruit.bmp";
-	printf("BMP Filename (default: %s) ", default_file.c_str());
-	fflush(stdout);
-	std::cin >> filename;
-	if (filename.empty()) {
-		filename = default_file;
-	}
+	//std::string filename;
+	std::string filename("U:\\gpu-final-project\\fruit.bmp");
+	//printf("BMP Filename (default: %s) ", default_file.c_str());
+	//fflush(stdout);
+	//std::cin >> filename;
+	//if (filename.empty()) {
+		//filename = default_file;
+		printf("Using default file %s\n", filename.c_str());
+	//}
 
 	int width = -1;
 	int height = -1;
 	int filesize = -1;
 	unsigned char* bmp_buffer = read_bmp(filename.c_str(), width, height, filesize);
 
+	if (NULL == bmp_buffer) {
+		LogError("Error: failed to malloc bmp_buffer.\n");
+		return -1;
+	}
+
+	printf("> width: %i\n> height: %i, filesize: %i\n", width, height, filesize);
+
+	/*
+	 * Convert it to YUV colorspace
+	 */
+	convert_colorspace(bmp_buffer, CONVERT_RGB2YUV);
+
+	// allocate working buffers. 
+	// the buffer should be aligned with 4K page and size should fit 64-byte cached line
+	cl_uint optimizedSize = ((sizeof(cl_uchar3) * width * height - 1) / 64 + 1) * 64;
+	cl_uchar3* cl_buffer = (cl_uchar3*)_aligned_malloc(optimizedSize, 4096);
+
+	if (NULL == cl_buffer) {
+		LogError("Error: _aligned_malloc failed to allocate buffers.\n");
+		return -1;
+	}
+
+	convert_buffer(bmp_buffer, cl_buffer, CONVERT_BMP2CLBUF);
 
 	/*
 	 * Get Centroid Pairs
 	 */
 	int k = 0;
-	std::vector<std::pair<int, int>> centroids;
+	std::vector<std::pair<unsigned char, unsigned char>> centroids;
 	while(true) {
 		std::string centroid;
-		printf("Centroid (e.g. x,y): ");
+		printf(" Centroid (e.g. x,y): ");
 		fflush(stdout);
-		std::cin >> centroid;
+		std::getline(std::cin, centroid);
 		if (centroid.empty()) {
+			if (k == 0) {
+				printf("> Error: Need at least one centroid.\n");
+				continue;
+			}
 			break;
 		}
 
 		size_t i = centroid.find(',');
-		int x, y;
+		int x, y, index;
 		x = std::stoi(centroid.substr(0, i));
 		y = std::stoi(centroid.substr(i+1));
-		printf("x: %i,  y: %i\n", x, y);
+		index = y*width + x;
+		if (index >= width*height) {
+			printf("> Error: coordinate out of bounds\n");
+			continue;
+		}
+		k++;
+		printf("> k=%i (u=%i, v=%i)\n", k, cl_buffer[index].y, cl_buffer[index].z);
+		centroids.push_back(std::pair<unsigned char, unsigned char>(cl_buffer[index].y, cl_buffer[index].z));
 	}
+
+
 
 
 
@@ -875,25 +912,10 @@ int _tmain(int argc, TCHAR* argv[])
         return -1;
     }
 
-    // allocate working buffers. 
-    // the buffer should be aligned with 4K page and size should fit 64-byte cached line
-    cl_uint optimizedSize = ((sizeof(cl_int) * arrayWidth * arrayHeight - 1)/64 + 1) * 64;
-    cl_int* inputA  = (cl_int*)_aligned_malloc(optimizedSize, 4096);
-    cl_int* inputB  = (cl_int*)_aligned_malloc(optimizedSize, 4096);
-    cl_int* outputC = (cl_int*)_aligned_malloc(optimizedSize, 4096);
-    if (NULL == inputA || NULL == inputB || NULL == outputC)
-    {
-        LogError("Error: _aligned_malloc failed to allocate buffers.\n");
-        return -1;
-    }
-
-    //random input
-    generateInput(inputA, arrayWidth, arrayHeight);
-    generateInput(inputB, arrayWidth, arrayHeight);
 
     // Create OpenCL buffers from host memory
     // These buffers will be used later by the OpenCL kernel
-    if (CL_SUCCESS != CreateBufferArguments(&ocl, inputA, inputB, outputC, arrayWidth, arrayHeight))
+    if (CL_SUCCESS != CreateBufferArguments(&ocl, NULL, NULL, NULL, arrayWidth, arrayHeight))
     {
         return -1;
     }
@@ -943,7 +965,7 @@ int _tmain(int argc, TCHAR* argv[])
 
     // The last part of this function: getting processed results back.
     // use map-unmap sequence to update original memory area with output buffer.
-    ReadAndVerify(&ocl, arrayWidth, arrayHeight, inputA, inputB);
+  //  ReadAndVerify(&ocl, arrayWidth, arrayHeight, inputA, inputB);
 
     // retrieve performance counter frequency
     if (queueProfilingEnable)
@@ -953,9 +975,8 @@ int _tmain(int argc, TCHAR* argv[])
             1000.0f*(float)(performanceCountNDRangeStop.QuadPart - performanceCountNDRangeStart.QuadPart) / (float)perfFrequency.QuadPart);
     }
 
-    _aligned_free(inputA);
-    _aligned_free(inputB);
-    _aligned_free(outputC);
+    _aligned_free(cl_buffer);
+
 	free(bmp_buffer);
 
     return 0;

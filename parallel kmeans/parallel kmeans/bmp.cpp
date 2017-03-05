@@ -1,4 +1,6 @@
 #include "bmp.h"
+#include <malloc.h>  
+#include <stdio.h>
 
 unsigned char * read_bmp(const char * filename, int & width, int & height, int & filesize)
 {
@@ -8,7 +10,11 @@ unsigned char * read_bmp(const char * filename, int & width, int & height, int &
 	filesize = ftell(f);
 	fseek(f, 0L, SEEK_SET);
 
-	unsigned char* data = new unsigned char[filesize];
+	unsigned char* data = (unsigned char*)malloc(sizeof(unsigned char)*filesize);
+	if (NULL == data) {
+		return NULL;
+	}
+	// read file into buffer
 	fread(data, sizeof(unsigned char), filesize, f);
 	fclose(f);
 
@@ -32,26 +38,30 @@ void write_bmp(const char * filename, unsigned char * data, int filesize)
 	fclose(fp);
 }
 
-void convert_colorspace(unsigned char * data, const int width, const int height, CONVERSION_TYPE direction)
+void convert_colorspace(unsigned char * data, COLORSPACE_CONVERSION_TYPE direction)
 {
-	int image_data_offset = (int)data[0x0a];
+	int width = *(int*)&data[WIDTH_INDEX];
+	int height = *(int*)&data[HEIGHT_INDEX];
+	int image_data_offset = *(int*)&data[IMAGE_DATA_OFFSET_INDEX];
+
+	// Image row width without padding
 	int padded_row = 4 * ((24 * width + 31) / 32);
 
 	for (int row = 0; row < height; row++) {
 		unsigned char* row_data = data + image_data_offset + row*padded_row;
 		for (int pixel = 0; pixel < width; pixel++) {
-			int pixel_pos = pixel * 3;
+			int pixel_start = pixel * 3;
 
 			// Extract the original values
-			unsigned char a = row_data[pixel_pos];
-			unsigned char b = row_data[pixel_pos + 1];
-			unsigned char c = row_data[pixel_pos + 2];
+			unsigned char a = row_data[pixel_start];
+			unsigned char b = row_data[pixel_start + 1];
+			unsigned char c = row_data[pixel_start + 2];
 
 			unsigned char out_a;
 			unsigned char out_b;
 			unsigned char out_c;
 
-			if (direction == RGB2YUV) {
+			if (direction == CONVERT_RGB2YUV) {
 				// (R, G, B) = (c, b, a)
 				out_a = RGB2Y(c, b, a);
 				out_b = RGB2U(c, b, a);
@@ -64,9 +74,38 @@ void convert_colorspace(unsigned char * data, const int width, const int height,
 			}
 
 			// Store converted value back in data
-			row_data[pixel_pos] = out_a;
-			row_data[pixel_pos + 1] = out_b;
-			row_data[pixel_pos + 2] = out_c;
+			row_data[pixel_start] = out_a;
+			row_data[pixel_start + 1] = out_b;
+			row_data[pixel_start + 2] = out_c;
+		}
+	}
+}
+
+void convert_buffer(unsigned char * bmp_data, cl_uchar3 * cl_buffer, const BUFFER_CONVERSION_TYPE direction)
+{
+	int width = *(int*)&bmp_data[WIDTH_INDEX];
+	int height = *(int*)&bmp_data[HEIGHT_INDEX];
+	int image_data_offset = *(int*)&bmp_data[IMAGE_DATA_OFFSET_INDEX];
+
+	// Image row width without padding
+	int image_row_width = 4 * ((24 * width + 31) / 32);
+
+	for (int row = 0; row < height; row++) {
+		unsigned char* row_data = bmp_data + image_data_offset + row*image_row_width;
+		for (int col = 0; col < width; col++) {
+			int pixel_start = 3*col;
+			int i = row*height + col;
+
+			if (direction == CONVERT_BMP2CLBUF) {
+				cl_buffer[i].x = bmp_data[pixel_start];
+				cl_buffer[i].y = bmp_data[pixel_start + 1];
+				cl_buffer[i].z = bmp_data[pixel_start + 2];
+			}
+			else {
+				bmp_data[pixel_start] = cl_buffer[i].x;
+				bmp_data[pixel_start + 1] = cl_buffer[i].y;
+				bmp_data[pixel_start + 2] = cl_buffer[i].z;
+			}
 		}
 	}
 }

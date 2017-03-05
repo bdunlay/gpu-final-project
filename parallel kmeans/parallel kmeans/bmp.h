@@ -1,5 +1,5 @@
 #pragma once
-#include <stdio.h>
+#include "CL\cl.h"
 
 // http://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c#14697130
 
@@ -19,11 +19,19 @@
 #define YUV2G(Y, U, V) CLIP(( 298 * C(Y) - 100 * D(U) - 208 * E(V) + 128) >> 8)
 #define YUV2B(Y, U, V) CLIP(( 298 * C(Y) + 516 * D(U)              + 128) >> 8)
 
-typedef enum {
-	RGB2YUV,
-	YUV2RGB
-} CONVERSION_TYPE;
+#define WIDTH_INDEX			18
+#define HEIGHT_INDEX		22
+#define IMAGE_DATA_OFFSET_INDEX	10
 
+typedef enum {
+	CONVERT_RGB2YUV,
+	CONVERT_YUV2RGB
+} COLORSPACE_CONVERSION_TYPE;
+
+typedef enum {
+	CONVERT_BMP2CLBUF,
+	CONVERT_CLBUG2BMP
+} BUFFER_CONVERSION_TYPE;
 
 /*
 Reads a BMP file into a buffer and returns a pointer to it.
@@ -46,7 +54,10 @@ void write_bmp(
 Converts BMP colorspaces (RGB -> YUV or YUV -> RGB)
 */
 void convert_colorspace(
-	_Inout_ unsigned char* data, 
-	_In_ const int width, 
-	_In_ const int height, 
-	_In_ const CONVERSION_TYPE direction);
+	_Inout_ unsigned char* data,
+	_In_ const COLORSPACE_CONVERSION_TYPE direction);
+
+void convert_buffer(
+	_Inout_ unsigned char* bmp_data,
+	_Inout_ cl_uchar3* cl_buffer,
+	_In_ const BUFFER_CONVERSION_TYPE direction);
