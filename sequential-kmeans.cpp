@@ -5,7 +5,11 @@
 #include <string.h>
 #include <time.h>
 
-// From http://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c#14697130
+// Some References for this code
+//
+// http://stackoverflow.com/questions/9296059/read-pixel-value-in-bmp-file
+// http://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c#14697130
+
 #define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
 
 // RGB -> YUV
@@ -41,15 +45,11 @@ unsigned char* ReadBMP(const char* filename, int& width, int& height, int& files
     filesize = ftell(f);
     fseek(f, 0L, SEEK_SET);
 
-    // unsigned char info[54];
-    // fread(info, sizeof(unsigned char), 54, f); // read the 54-byte header
-
     unsigned char* data = new unsigned char[filesize];
     fread(data, sizeof(unsigned char), filesize, f);
     fclose(f);
 
     // extract image height and width from header
-    // int row_padded = width*3 + (4 - ((width * 3) % 4));
     width = *(int*)&data[18];
     height = *(int*)&data[22];
 
@@ -58,8 +58,7 @@ unsigned char* ReadBMP(const char* filename, int& width, int& height, int& files
 
 void convertColorSpace(unsigned char* data, const int width, const int height, DIRECTION direction) {
     int image_data_offset = (int)data[0x0a];
-    //int padded_row = width*3 + 4 - ((width * 3) % 4);
-    int padded_row = 4*((24*width+31)/32);// - 1;
+    int padded_row = 4*((24*width+31)/32);
 
     for (int row = 0; row < height; row++) {
         unsigned char* row_data = data + image_data_offset + row*padded_row;
@@ -108,8 +107,7 @@ void writeFile(const char* filename, unsigned char* data, int filesize) {
 
 centroid_t get_centroid(int x, int y,  unsigned char* data, const int width, const int height) {
     int image_data_offset = (int)data[0x0a];
-    //int padded_row = width*3 + 4 - ((width * 3) % 4);
-    int padded_row = 4*((24*width+31)/32);// - 1;
+    int padded_row = 4*((24*width+31)/32);
 
     unsigned char* pixel = &data[image_data_offset + padded_row*(y) + 3*(x)];
 
@@ -158,19 +156,11 @@ void clusterPixels(
             }
 
             if (colorize) {
-              //  if (cluster != 0) {
-              //      row_data[pixel_pos] = RGB2Y(0,0,0);
-              //      row_data[pixel_pos+1] = RGB2U(0,0,0);
-              //      row_data[pixel_pos+2] = RGB2V(0,0,0);
-              //  } else {
-                    unsigned char c_u = get_u(centroids[cluster]);
-                    unsigned char c_v = get_v(centroids[cluster]);
-                     // Extract the original values
-                    // Store converted value back in data
-                    row_data[pixel_pos] = RGB2Y(255,0,0);
-                    row_data[pixel_pos + 1] = c_u;
-                    row_data[pixel_pos + 2] = c_v;
-              //  }
+                unsigned char c_u = get_u(centroids[cluster]);
+                unsigned char c_v = get_v(centroids[cluster]);
+                row_data[pixel_pos] = RGB2Y(255,0,0);
+                row_data[pixel_pos + 1] = c_u;
+                row_data[pixel_pos + 2] = c_v;
            }
 
 
@@ -207,8 +197,6 @@ void kmeans(unsigned char* data, const int width, const int height, const int k,
     do {
         memcpy(cached_centroids, centroids, k*sizeof(*cached_centroids));
         clusterPixels(data, width, height, centroids, k);
-        // printf("\noriginal uv: (%u, %u)\n", get_u(cached_centroids[0]), get_v(cached_centroids[0]));
-        // printf("average  uv: (%u, %u)\n", get_u(centroids[0]), get_v(centroids[0]));
     }
     while (compareCentroids(cached_centroids, centroids, k));
 
@@ -264,5 +252,3 @@ int main(int argc, char** argv) {
     delete data;
     return 0;
 }
-
-// http://stackoverflow.com/questions/9296059/read-pixel-value-in-bmp-file
