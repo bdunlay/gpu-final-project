@@ -25,7 +25,7 @@ unsigned char * read_bmp(const char * filename, int & width, int & height, int &
 	return data;
 }
 
-void write_bmp(const char * filename, unsigned char * data, int filesize)
+void write_bmp(const char * filename, const unsigned char * data, int filesize)
 {
 	FILE *fp;
 	fp = fopen(filename, "wb");

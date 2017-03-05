@@ -895,6 +895,18 @@ int _tmain(int argc, TCHAR* argv[])
 
 
 
+
+	/*
+	 * Convert cl_buffer back to bmp buffer and back to RGB colorspace
+	 */
+	convert_buffer(bmp_buffer, cl_buffer, CONVERT_CLBUF2BMP);
+	convert_colorspace(bmp_buffer, CONVERT_YUV2RGB);
+
+	std::string output_filename = "image_output.bmp";
+	write_bmp(output_filename.c_str(), bmp_buffer, filesize);
+	return 0;
+
+
 	cl_int err;
     ocl_args_d_t ocl;
     cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
