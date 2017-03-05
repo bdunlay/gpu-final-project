@@ -25,9 +25,12 @@
 #include <tchar.h>
 #include <memory.h>
 #include <vector>
+#include <string>
+#include <iostream>
 
 #include "CL\cl.h"
 #include "utils.h"
+#include "bmp.h"
 
 //for perf. counters
 #include <Windows.h>
@@ -401,6 +404,34 @@ int GetPlatformAndDeviceVersion (cl_platform_id platformId, ocl_args_d_t *ocl)
         ocl->platformVersion = OPENCL_VERSION_2_0;
     }
 
+
+
+	err = clGetPlatformInfo(platformId, CL_PLATFORM_NAME, 0, NULL, &stringLength);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clGetPlatformInfo() to get CL_PLATFORM_NAME length returned '%s'.\n", TranslateOpenCLError(err));
+		return err;
+	}
+
+	// Now, that we know the platform's version string length, we can allocate enough space before read it
+	char* name = (char*)malloc(sizeof(char)*stringLength);
+
+	// Read the platform's version string
+	// The read value returned in platformVersion
+	err = clGetPlatformInfo(platformId, CL_PLATFORM_NAME, stringLength, name, NULL);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clGetplatform_ids() to get CL_PLATFORM_VERSION returned %s.\n", TranslateOpenCLError(err));
+		return err;
+	}
+
+	LogInfo("Platform Name: %s\n", name);
+	free(name);
+
+
+
+
+
     // Read the device's version string length (param_value is NULL).
     err = clGetDeviceInfo(ocl->device, CL_DEVICE_VERSION, 0, NULL, &stringLength);
     if (CL_SUCCESS != err)
@@ -491,7 +522,7 @@ int SetupOpenCL(ocl_args_d_t *ocl, cl_device_type deviceType)
 
     // Query for all available OpenCL platforms on the system
     // Here you enumerate all platforms and pick one which name has preferredPlatform as a sub-string
-    cl_platform_id platformId = FindOpenCLPlatform("Intel", deviceType);
+    cl_platform_id platformId = FindOpenCLPlatform(NULL, deviceType);
     if (NULL == platformId)
     {
         LogError("Error: Failed to find OpenCL platform.\n");
@@ -562,7 +593,7 @@ int CreateAndBuildProgram(ocl_args_d_t *ocl)
     // The size of the C program is returned in sourceSize
     char* source = NULL;
     size_t src_size = 0;
-    err = ReadSourceFromFile("Template.cl", &source, &src_size);
+    err = ReadSourceFromFile("kmeans.cl", &source, &src_size);
     if (CL_SUCCESS != err)
     {
         LogError("Error: ReadSourceFromFile returned %s.\n", TranslateOpenCLError(err));
@@ -768,7 +799,6 @@ bool ReadAndVerify(ocl_args_d_t *ocl, cl_uint width, cl_uint height, cl_int *inp
     return result;
 }
 
-
 /*
  * main execution routine
  * Basically it consists of three parts:
@@ -778,7 +808,57 @@ bool ReadAndVerify(ocl_args_d_t *ocl, cl_uint width, cl_uint height, cl_int *inp
  */
 int _tmain(int argc, TCHAR* argv[])
 {
-    cl_int err;
+	/*
+	 * Remind yourself to switch back to GPU target
+	 */
+	LogInfo("NOTE TO SELF\n");
+	LogInfo("- Change target to GPU\n");
+	LogInfo("- Change Platform Target to Intel (not NULL)\n");
+	LogInfo("\n\nPress any key to continue...\n");
+	getchar();
+	
+	/*
+	 * Read file, convert to YUV
+	 */
+	std::string filename;
+	std::string default_file = "U:\\gpu-final-project\\fruit.bmp";
+	printf("BMP Filename (default: %s) ", default_file.c_str());
+	fflush(stdout);
+	std::cin >> filename;
+	if (filename.empty()) {
+		filename = default_file;
+	}
+
+	int width = -1;
+	int height = -1;
+	int filesize = -1;
+	unsigned char* bmp_buffer = read_bmp(filename.c_str(), width, height, filesize);
+
+
+	/*
+	 * Get Centroid Pairs
+	 */
+	int k = 0;
+	std::vector<std::pair<int, int>> centroids;
+	while(true) {
+		std::string centroid;
+		printf("Centroid (e.g. x,y): ");
+		fflush(stdout);
+		std::cin >> centroid;
+		if (centroid.empty()) {
+			break;
+		}
+
+		size_t i = centroid.find(',');
+		int x, y;
+		x = std::stoi(centroid.substr(0, i));
+		y = std::stoi(centroid.substr(i+1));
+		printf("x: %i,  y: %i\n", x, y);
+	}
+
+
+
+	cl_int err;
     ocl_args_d_t ocl;
     cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
 
@@ -818,7 +898,7 @@ int _tmain(int argc, TCHAR* argv[])
         return -1;
     }
 
-     // Create and build the OpenCL program
+	// Create and build the OpenCL program
     if (CL_SUCCESS != CreateAndBuildProgram(&ocl))
     {
         return -1;
@@ -876,6 +956,7 @@ int _tmain(int argc, TCHAR* argv[])
     _aligned_free(inputA);
     _aligned_free(inputB);
     _aligned_free(outputC);
+	free(bmp_buffer);
 
     return 0;
 }

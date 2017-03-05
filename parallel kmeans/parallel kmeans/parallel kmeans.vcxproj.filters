@@ -24,6 +24,9 @@
     <ClCompile Include="parallel kmeans.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="bmp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="utils.h">
@@ -32,9 +35,12 @@
     <ClInclude Include="parallel kmeans.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="bmp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Intel_OpenCL_Build_Rules Include="Template.cl">
+    <Intel_OpenCL_Build_Rules Include="kmeans.cl">
       <Filter>OpenCL Files</Filter>
     </Intel_OpenCL_Build_Rules>
   </ItemGroup>
