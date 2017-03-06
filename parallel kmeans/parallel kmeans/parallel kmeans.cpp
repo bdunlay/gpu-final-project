@@ -143,9 +143,8 @@ struct ocl_args_d_t
     float            compilerVersion;   // hold the device OpenCL C version (default. 1.2)
     
     // Objects that are specific for algorithm implemented in this sample
-    cl_mem           srcA;              // hold first source buffer
-    cl_mem           srcB;              // hold second source buffer
-    cl_mem           dstMem;            // hold destination buffer
+    cl_mem           image_data;              // hold first source buffer
+    cl_mem           centroids;              // hold second source buffer
 };
 
 ocl_args_d_t::ocl_args_d_t():
@@ -157,9 +156,8 @@ ocl_args_d_t::ocl_args_d_t():
         platformVersion(OPENCL_VERSION_1_2),
         deviceVersion(OPENCL_VERSION_1_2),
         compilerVersion(OPENCL_VERSION_1_2),
-        srcA(NULL),
-        srcB(NULL),
-        dstMem(NULL)
+        image_data(NULL),
+        centroids(NULL)
 {
 }
 
@@ -194,25 +192,17 @@ ocl_args_d_t::~ocl_args_d_t()
             LogError("Error: clReleaseProgram returned '%s'.\n", TranslateOpenCLError(err));
         }
     }
-    if (srcA)
+    if (image_data)
     {
-        err = clReleaseMemObject(srcA);
+        err = clReleaseMemObject(image_data);
         if (CL_SUCCESS != err)
         {
             LogError("Error: clReleaseMemObject returned '%s'.\n", TranslateOpenCLError(err));
         }
     }
-    if (srcB)
+    if (centroids)
     {
-        err = clReleaseMemObject(srcB);
-        if (CL_SUCCESS != err)
-        {
-            LogError("Error: clReleaseMemObject returned '%s'.\n", TranslateOpenCLError(err));
-        }
-    }
-    if (dstMem)
-    {
-        err = clReleaseMemObject(dstMem);
+        err = clReleaseMemObject(centroids);
         if (CL_SUCCESS != err)
         {
             LogError("Error: clReleaseMemObject returned '%s'.\n", TranslateOpenCLError(err));
@@ -649,7 +639,7 @@ Finish:
  * Create OpenCL buffers from host memory
  * These buffers will be used later by the OpenCL kernel
  */
-int CreateBufferArguments(ocl_args_d_t *ocl, cl_int* inputA, cl_int* inputB, cl_int* outputC, cl_uint arrayWidth, cl_uint arrayHeight)
+int CreateBufferArguments(ocl_args_d_t *ocl, cl_uchar3* image_data, cl_uchar2* centroids, cl_uint k, cl_uint buf_len)
 {
     cl_int err = CL_SUCCESS;
 
@@ -659,31 +649,19 @@ int CreateBufferArguments(ocl_args_d_t *ocl, cl_int* inputA, cl_int* inputB, cl_
     // to better organize data copying.
     // You use CL_MEM_COPY_HOST_PTR here, because the buffers should be populated with bytes at inputA and inputB.
 
-    ocl->srcA = clCreateBuffer(ocl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint) * arrayWidth * arrayHeight, inputA, &err);
+    ocl->image_data = clCreateBuffer(ocl->context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(cl_uchar3) * buf_len, image_data, &err);
     if (CL_SUCCESS != err)
     {
-        LogError("Error: clCreateBuffer for srcA returned %s\n", TranslateOpenCLError(err));
+        LogError("Error: clCreateBuffer for image_data returned %s\n", TranslateOpenCLError(err));
         return err;
     }
 
-    ocl->srcB = clCreateBuffer(ocl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint) * arrayWidth * arrayHeight, inputB, &err);
+    ocl->centroids = clCreateBuffer(ocl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uchar2) * 255, centroids, &err);
     if (CL_SUCCESS != err)
     {
-        LogError("Error: clCreateBuffer for srcB returned %s\n", TranslateOpenCLError(err));
+        LogError("Error: clCreateBuffer for centroids returned %s\n", TranslateOpenCLError(err));
         return err;
     }
-
-    // If the output buffer is created directly on top of output buffer using CL_MEM_USE_HOST_PTR,
-    // then, depending on the OpenCL runtime implementation and hardware capabilities, 
-    // it may save you not necessary data copying.
-    // As it is known that output buffer will be write only, you explicitly declare it using CL_MEM_WRITE_ONLY.
-    ocl->dstMem = clCreateBuffer(ocl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint) * arrayWidth * arrayHeight, outputC, &err);
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: clCreateBuffer for dstMem returned %s\n", TranslateOpenCLError(err));
-        return err;
-    }
-
 
     return CL_SUCCESS;
 }
@@ -696,24 +674,17 @@ cl_uint SetKernelArguments(ocl_args_d_t *ocl)
 {
     cl_int err = CL_SUCCESS;
 
-    err  =  clSetKernelArg(ocl->kernel, 0, sizeof(cl_mem), (void *)&ocl->srcA);
+    err  =  clSetKernelArg(ocl->kernel, 0, sizeof(cl_mem), (void *)&ocl->image_data);
     if (CL_SUCCESS != err)
     {
         LogError("error: Failed to set argument srcA, returned %s\n", TranslateOpenCLError(err));
         return err;
     }
 
-    err  = clSetKernelArg(ocl->kernel, 1, sizeof(cl_mem), (void *)&ocl->srcB);
+    err  = clSetKernelArg(ocl->kernel, 1, sizeof(cl_mem), (void *)&ocl->centroids);
     if (CL_SUCCESS != err)
     {
         LogError("Error: Failed to set argument srcB, returned %s\n", TranslateOpenCLError(err));
-        return err;
-    }
-
-    err  = clSetKernelArg(ocl->kernel, 2, sizeof(cl_mem), (void *)&ocl->dstMem);
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: Failed to set argument dstMem, returned %s\n", TranslateOpenCLError(err));
         return err;
     }
 
@@ -724,7 +695,7 @@ cl_uint SetKernelArguments(ocl_args_d_t *ocl)
 /*
  * Execute the kernel
  */
-cl_uint ExecuteAddKernel(ocl_args_d_t *ocl, cl_uint width, cl_uint height)
+cl_uint ExecuteClusteringKernel(ocl_args_d_t *ocl, cl_uint width, cl_uint height)
 {
     cl_int err = CL_SUCCESS;
 
@@ -755,48 +726,91 @@ cl_uint ExecuteAddKernel(ocl_args_d_t *ocl, cl_uint width, cl_uint height)
 /*
  * "Read" the result buffer (mapping the buffer to the host memory address)
  */
-bool ReadAndVerify(ocl_args_d_t *ocl, cl_uint width, cl_uint height, cl_int *inputA, cl_int *inputB)
+bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_uchar2* centroids, cl_uint width, cl_uint height, const cl_uint k)
 {
     cl_int err = CL_SUCCESS;
     bool result = true;
 
-    // Enqueue a command to map the buffer object (ocl->dstMem) into the host address space and returns a pointer to it
-    // The map operation is blocking
-    cl_int *resultPtr = (cl_int *)clEnqueueMapBuffer(ocl->commandQueue, ocl->dstMem, true, CL_MAP_READ, 0, sizeof(cl_uint) * width * height, 0, NULL, NULL, &err);
+	// Enqueue a command to map the buffer object (ocl->dstMem) into the host address space and returns a pointer to it
+	// The map operation is blocking
+	cl_uchar3 *resultPtr = (cl_uchar3 *)clEnqueueMapBuffer(ocl->commandQueue, ocl->image_data, true, CL_MAP_READ, 0, sizeof(cl_uchar3) * width * height, 0, NULL, NULL, &err);
 
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: clEnqueueMapBuffer returned %s\n", TranslateOpenCLError(err));
-        return false;
-    }
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clEnqueueMapBuffer returned %s\n", TranslateOpenCLError(err));
+		return false;
+	}
 
-    // Call clFinish to guarantee that output region is updated
-    err = clFinish(ocl->commandQueue);
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: clFinish returned %s\n", TranslateOpenCLError(err));
-    }
+	// Call clFinish to guarantee that output region is updated
+	err = clFinish(ocl->commandQueue);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clFinish returned %s\n", TranslateOpenCLError(err));
+	}
 
-    // We mapped dstMem to resultPtr, so resultPtr is ready and includes the kernel output !!!
-    // Verify the results
-    unsigned int size = width * height;
-    for (unsigned int k = 0; k < size; ++k)
-    {
-        if (resultPtr[k] != inputA[k] + inputB[k])
-        {
-            LogError("Verification failed at %d: (%d + %d = %d)\n", k, inputA[k], inputB[k], resultPtr[k]);
-            result = false;
-        }
-    }
+	// centroids {x,y,z} = {u, v, cluster assignment}
+	// mean_centroids {x,y,z} = {u sum, v sum, pixel count}
+	cl_uint3* mean_centroids = (cl_uint3*)malloc(sizeof(cl_uint3)*k);
+	memset(mean_centroids, 0, sizeof(mean_centroids));
 
+	for (int i = 0; i < width*height; i++) {
+		int centroid = resultPtr[i].z;
+		mean_centroids[centroid].x += resultPtr[i].x;
+		mean_centroids[centroid].y += resultPtr[i].y;
+		mean_centroids[centroid].z += 1;
+	}
+
+	for (int i = 0; i < k; i++) {
+		centroids[i].x = mean_centroids[i].x / mean_centroids[i].z;
+		centroids[i].y = mean_centroids[i].y / mean_centroids[i].z;
+	}
+
+	free(mean_centroids);
+
+
+	printf("Don't forget to unmap buffer!\n");
      // Unmapped the output buffer before releasing it
-    err = clEnqueueUnmapMemObject(ocl->commandQueue, ocl->dstMem, resultPtr, 0, NULL, NULL);
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: clEnqueueUnmapMemObject returned %s\n", TranslateOpenCLError(err));
-    }
+    //err = clEnqueueUnmapMemObject(ocl->commandQueue, ocl->dstMem, resultPtr, 0, NULL, NULL);
+    //if (CL_SUCCESS != err)
+    //{
+    //    LogError("Error: clEnqueueUnmapMemObject returned %s\n", TranslateOpenCLError(err));
+   // }
 
     return result;
+}
+
+int get_centroids(cl_uchar2* centroids, cl_uchar3* image_data, int width, int height) {
+	int k = 0;
+	// max out k at the un-aligned buffer size... don't think we'll ever get here
+	while (k < width*height) {
+		std::string centroid;
+		printf(" Centroid (e.g. x,y): ");
+		fflush(stdout);
+		std::getline(std::cin, centroid);
+		if (centroid.empty()) {
+			if (k == 0) {
+				printf("> Error: Need at least one centroid.\n");
+				continue;
+			}
+			break;
+		}
+
+		size_t i = centroid.find(',');
+		cl_uchar2 coord;
+		unsigned int index;
+		coord.x = (cl_uchar)std::stoi(centroid.substr(0, i));
+		coord.y = (cl_uchar)std::stoi(centroid.substr(i + 1));
+		index = coord.y*width + coord.x;
+		if (index >= width*height) {
+			printf("> Error: coordinate out of bounds\n");
+			continue;
+		}
+		centroids[k].x = image_data[index].x;
+		centroids[k].y = image_data[index].y;
+		k++;
+		printf("> k=%i (u=%i, v=%i)\n", k, image_data[index].x, image_data[index].y);
+	}
+	return k;
 }
 
 /*
@@ -816,82 +830,114 @@ int _tmain(int argc, TCHAR* argv[])
 	LogInfo("- Change Platform Target to Intel (not NULL)\n");
 	LogInfo("\n\nPress any key to continue...\n");
 	getchar();
-	
+
 	/*
 	 * Get a file to process
 	 */
-	//std::string filename;
 	std::string filename("U:\\gpu-final-project\\fruit.bmp");
-	//printf("BMP Filename (default: %s) ", default_file.c_str());
-	//fflush(stdout);
-	//std::cin >> filename;
-	//if (filename.empty()) {
-		//filename = default_file;
-		printf("Using default file %s\n", filename.c_str());
-	//}
+	printf("Using default file %s\n", filename.c_str());
 
-	int width = -1;
-	int height = -1;
-	int filesize = -1;
+	/*
+	 * Read into memory
+	 */
+	int width, height, filesize = -1;
 	unsigned char* bmp_buffer = read_bmp(filename.c_str(), width, height, filesize);
-
 	if (NULL == bmp_buffer) {
 		LogError("Error: failed to malloc bmp_buffer.\n");
 		return -1;
 	}
-
 	printf("> width: %i\n> height: %i, filesize: %i\n", width, height, filesize);
+
+	/*
+	 * Allocate working buffers.
+	 * The buffers should be aligned with 4K page and size should fit 64-byte cached line
+	 */
+	cl_uint image_data_opt_size = ((sizeof(cl_uchar2) * width * height - 1) / 64 + 1) * 64;
+	cl_uint centroid_opt_size = ((sizeof(cl_uchar2) * 255 - 1) / 64 + 1) * 64;
+	cl_uchar3* image_data = (cl_uchar3*)_aligned_malloc(image_data_opt_size, 4096);
+	cl_uchar2* centroids = (cl_uchar2*)_aligned_malloc(centroid_opt_size, 4096);
+	if (NULL == image_data || NULL == centroids) {
+		LogError("Error: _aligned_malloc failed to allocate buffers.\n");
+		return -1;
+	}
 
 	/*
 	 * Convert it to YUV colorspace
 	 */
 	convert_colorspace(bmp_buffer, CONVERT_RGB2YUV);
 
-	// allocate working buffers. 
-	// the buffer should be aligned with 4K page and size should fit 64-byte cached line
-	cl_uint optimizedSize = ((sizeof(cl_uchar3) * width * height - 1) / 64 + 1) * 64;
-	cl_uchar3* cl_buffer = (cl_uchar3*)_aligned_malloc(optimizedSize, 4096);
-
-	if (NULL == cl_buffer) {
-		LogError("Error: _aligned_malloc failed to allocate buffers.\n");
-		return -1;
-	}
-
-	convert_buffer(bmp_buffer, cl_buffer, CONVERT_BMP2CLBUF);
+	/*
+	 * Convert it to cl buffer
+	 */
+	convert_buffer(bmp_buffer, image_data, CONVERT_BMP2CLBUF);
 
 	/*
 	 * Get Centroid Pairs
 	 */
-	int k = 0;
-	std::vector<std::pair<unsigned char, unsigned char>> centroids;
-	while(true) {
-		std::string centroid;
-		printf(" Centroid (e.g. x,y): ");
-		fflush(stdout);
-		std::getline(std::cin, centroid);
-		if (centroid.empty()) {
-			if (k == 0) {
-				printf("> Error: Need at least one centroid.\n");
-				continue;
-			}
-			break;
-		}
+	int k = get_centroids(centroids, image_data, width, height);
+	cl_uchar2* centroid_cache = (cl_uchar2*)malloc(sizeof(cl_uchar2)*k);
+	memcpy(centroid_cache, centroids, sizeof(centroid_cache));
 
-		size_t i = centroid.find(',');
-		int x, y, index;
-		x = std::stoi(centroid.substr(0, i));
-		y = std::stoi(centroid.substr(i+1));
-		index = y*width + x;
-		if (index >= width*height) {
-			printf("> Error: coordinate out of bounds\n");
-			continue;
-		}
-		k++;
-		printf("> k=%i (u=%i, v=%i)\n", k, cl_buffer[index].y, cl_buffer[index].z);
-		centroids.push_back(std::pair<unsigned char, unsigned char>(cl_buffer[index].y, cl_buffer[index].z));
+
+
+
+
+
+
+	cl_int err;
+	ocl_args_d_t ocl;
+	cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
+	LARGE_INTEGER perfFrequency, performanceCountNDRangeStart, performanceCountNDRangeStop;
+
+	//initialize Open CL objects (context, queue, etc.)
+	if (CL_SUCCESS != SetupOpenCL(&ocl, deviceType))
+	{
+		return -1;
+	}
+
+	// Create OpenCL buffers from host memory
+	// These buffers will be used later by the OpenCL kernel
+	if (CL_SUCCESS != CreateBufferArguments(&ocl, image_data, centroids, k, width*height))
+	{
+		return -1;
+	}
+
+	// Create and build the OpenCL program
+	if (CL_SUCCESS != CreateAndBuildProgram(&ocl))
+	{
+		return -1;
+	}
+
+	// Program consists of kernels.
+	// Each kernel can be called (enqueued) from the host part of OpenCL application.
+	// To call the kernel, you need to create it from existing program.
+	ocl.kernel = clCreateKernel(ocl.program, "assign_cluster", &err);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clCreateKernel returned %s\n", TranslateOpenCLError(err));
+		return -1;
+	}
+
+	// Passing arguments into OpenCL kernel.
+	if (CL_SUCCESS != SetKernelArguments(&ocl))
+	{
+		return -1;
 	}
 
 
+
+	/*
+	 * Enqueue Kernel
+	 */
+	do {
+		if (CL_SUCCESS != ExecuteClusteringKernel(&ocl, width, height))
+		{
+			return -1;
+		}
+
+		ReadAndComputeMeanCentroids(&ocl, centroids, width, height, k);
+
+	} while (memcmp(centroid_cache, centroids, sizeof(centroid_cache)) != 0);
 
 
 
@@ -899,7 +945,7 @@ int _tmain(int argc, TCHAR* argv[])
 	/*
 	 * Convert cl_buffer back to bmp buffer and back to RGB colorspace
 	 */
-	convert_buffer(bmp_buffer, cl_buffer, CONVERT_CLBUF2BMP);
+	convert_buffer(bmp_buffer, image_data, CONVERT_CLBUF2BMP);
 	convert_colorspace(bmp_buffer, CONVERT_YUV2RGB);
 
 	std::string output_filename = "image_output.bmp";
@@ -907,52 +953,7 @@ int _tmain(int argc, TCHAR* argv[])
 	return 0;
 
 
-	cl_int err;
-    ocl_args_d_t ocl;
-    cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
 
-    LARGE_INTEGER perfFrequency;
-    LARGE_INTEGER performanceCountNDRangeStart;
-    LARGE_INTEGER performanceCountNDRangeStop;
-
-    cl_uint arrayWidth  = 1024;
-    cl_uint arrayHeight = 1024;
-
-    //initialize Open CL objects (context, queue, etc.)
-    if (CL_SUCCESS != SetupOpenCL(&ocl, deviceType))
-    {
-        return -1;
-    }
-
-
-    // Create OpenCL buffers from host memory
-    // These buffers will be used later by the OpenCL kernel
-    if (CL_SUCCESS != CreateBufferArguments(&ocl, NULL, NULL, NULL, arrayWidth, arrayHeight))
-    {
-        return -1;
-    }
-
-	// Create and build the OpenCL program
-    if (CL_SUCCESS != CreateAndBuildProgram(&ocl))
-    {
-        return -1;
-    }
-
-    // Program consists of kernels.
-    // Each kernel can be called (enqueued) from the host part of OpenCL application.
-    // To call the kernel, you need to create it from existing program.
-    ocl.kernel = clCreateKernel(ocl.program, "Add", &err);
-    if (CL_SUCCESS != err)
-    {
-        LogError("Error: clCreateKernel returned %s\n", TranslateOpenCLError(err));
-        return -1;
-    }
-
-    // Passing arguments into OpenCL kernel.
-    if (CL_SUCCESS != SetKernelArguments(&ocl))
-    {
-        return -1;
-    }
 
     // Regularly you wish to use OpenCL in your application to achieve greater performance results
     // that are hard to achieve in other ways.
@@ -964,7 +965,7 @@ int _tmain(int argc, TCHAR* argv[])
     // because this call doesn't guarantees that kernel is finished.
     // clEnqueueNDRangeKernel is just enqueue new command in OpenCL command queue and doesn't wait until it ends.
     // clFinish waits until all commands in command queue are finished, that suits your need to measure time.
-    bool queueProfilingEnable = true;
+/*    bool queueProfilingEnable = true;
     if (queueProfilingEnable)
         QueryPerformanceCounter(&performanceCountNDRangeStart);
     // Execute (enqueue) the kernel
@@ -986,9 +987,10 @@ int _tmain(int argc, TCHAR* argv[])
         LogInfo("NDRange performance counter time %f ms.\n",
             1000.0f*(float)(performanceCountNDRangeStop.QuadPart - performanceCountNDRangeStart.QuadPart) / (float)perfFrequency.QuadPart);
     }
-
-    _aligned_free(cl_buffer);
-
+	*/
+    _aligned_free(image_data);
+	_aligned_free(centroids);
+	_aligned_free(centroid_cache);
 	free(bmp_buffer);
 
     return 0;

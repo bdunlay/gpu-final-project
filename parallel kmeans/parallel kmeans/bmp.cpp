@@ -97,14 +97,12 @@ void convert_buffer(unsigned char * bmp_data, cl_uchar3 * cl_buffer, const BUFFE
 			int i = row*height + col;
 
 			if (direction == CONVERT_BMP2CLBUF) {
-				cl_buffer[i].x = bmp_data[pixel_start];
-				cl_buffer[i].y = bmp_data[pixel_start + 1];
-				cl_buffer[i].z = bmp_data[pixel_start + 2];
+				cl_buffer[i].x = bmp_data[pixel_start + 1];
+				cl_buffer[i].y = bmp_data[pixel_start + 2];
 			}
 			else {
-				bmp_data[pixel_start] = cl_buffer[i].x;
-				bmp_data[pixel_start + 1] = cl_buffer[i].y;
-				bmp_data[pixel_start + 2] = cl_buffer[i].z;
+				bmp_data[pixel_start + 1] = cl_buffer[i].x;
+				bmp_data[pixel_start + 2] = cl_buffer[i].y;
 			}
 		}
 	}
