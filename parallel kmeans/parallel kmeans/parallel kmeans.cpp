@@ -876,7 +876,6 @@ int _tmain(int argc, TCHAR* argv[])
 	 */
 	int k = get_centroids(centroids, image_data, width, height);
 	cl_uchar2* centroid_cache = (cl_uchar2*)malloc(sizeof(cl_uchar2)*k);
-	memcpy(centroid_cache, centroids, sizeof(centroid_cache));
 
 
 
@@ -930,6 +929,8 @@ int _tmain(int argc, TCHAR* argv[])
 	 * Enqueue Kernel
 	 */
 	do {
+		memcpy(centroid_cache, centroids, sizeof(centroid_cache));
+
 		if (CL_SUCCESS != ExecuteClusteringKernel(&ocl, width, height))
 		{
 			return -1;
