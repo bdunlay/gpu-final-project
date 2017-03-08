@@ -81,7 +81,7 @@ void convert_colorspace(unsigned char * data, COLORSPACE_CONVERSION_TYPE directi
 	}
 }
 
-void convert_buffer(unsigned char * bmp_data, cl_uchar3 * cl_buffer, const BUFFER_CONVERSION_TYPE direction)
+void convert_buffer(unsigned char * bmp_data, cl_float2 * cl_buffer, const BUFFER_CONVERSION_TYPE direction)
 {
 	int width = *(int*)&bmp_data[WIDTH_INDEX];
 	int height = *(int*)&bmp_data[HEIGHT_INDEX];
@@ -100,16 +100,16 @@ void convert_buffer(unsigned char * bmp_data, cl_uchar3 * cl_buffer, const BUFFE
 
 			if (direction == CONVERT_BMP2CLBUF) {
 				// (R, G, B) = (c, b, a)
-				cl_uchar u = row_data[pixel_start + 1];
-				cl_uchar v = row_data[pixel_start + 2];
+				cl_float u = row_data[pixel_start + 1];
+				cl_float v = row_data[pixel_start + 2];
 				cl_buffer[index].x = u;
 				cl_buffer[index].y = v;
 			}
 			else {
-				cl_uchar u = cl_buffer[index].x;
-				cl_uchar v = cl_buffer[index].y;
-				cl_buffer[pixel_start + 1].x = u;
-				cl_buffer[pixel_start + 2].y = v;
+				cl_float u = cl_buffer[index].x;
+				cl_float v = cl_buffer[index].y;
+				row_data[pixel_start + 1] = u;
+				row_data[pixel_start + 2] = v;
 			}
 			index++;
 		}

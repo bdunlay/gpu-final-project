@@ -145,6 +145,7 @@ struct ocl_args_d_t
     // Objects that are specific for algorithm implemented in this sample
     cl_mem           image_data;              // hold first source buffer
     cl_mem           centroids;              // hold second source buffer
+	cl_mem           centroid_assignments;              // hold second source buffer
 	cl_uint			 k;
 };
 
@@ -158,7 +159,8 @@ ocl_args_d_t::ocl_args_d_t():
         deviceVersion(OPENCL_VERSION_1_2),
         compilerVersion(OPENCL_VERSION_1_2),
         image_data(NULL),
-        centroids(NULL)
+        centroids(NULL),
+		centroid_assignments(NULL)
 {
 }
 
@@ -640,7 +642,7 @@ Finish:
  * Create OpenCL buffers from host memory
  * These buffers will be used later by the OpenCL kernel
  */
-int CreateBufferArguments(ocl_args_d_t *ocl, cl_uchar3* image_data, cl_uchar2* centroids, cl_uint k, cl_uint buf_len)
+int CreateBufferArguments(ocl_args_d_t *ocl, cl_float2* image_data, cl_float2* centroids, cl_float* centroid_assignments, cl_uint k, cl_uint buf_len)
 {
     cl_int err = CL_SUCCESS;
 
@@ -650,19 +652,26 @@ int CreateBufferArguments(ocl_args_d_t *ocl, cl_uchar3* image_data, cl_uchar2* c
     // to better organize data copying.
     // You use CL_MEM_COPY_HOST_PTR here, because the buffers should be populated with bytes at inputA and inputB.
 
-    ocl->image_data = clCreateBuffer(ocl->context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(cl_uchar3) * buf_len, image_data, &err);
+    ocl->image_data = clCreateBuffer(ocl->context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(cl_float2) * buf_len, image_data, &err);
     if (CL_SUCCESS != err)
     {
         LogError("Error: clCreateBuffer for image_data returned %s\n", TranslateOpenCLError(err));
         return err;
     }
 
-    ocl->centroids = clCreateBuffer(ocl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uchar2) * 255, centroids, &err);
+    ocl->centroids = clCreateBuffer(ocl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_float2) * 255, centroids, &err);
     if (CL_SUCCESS != err)
     {
         LogError("Error: clCreateBuffer for centroids returned %s\n", TranslateOpenCLError(err));
         return err;
     }
+
+	ocl->centroid_assignments = clCreateBuffer(ocl->context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(cl_float) * buf_len, centroid_assignments, &err);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: clCreateBuffer for centroid_assignments returned %s\n", TranslateOpenCLError(err));
+		return err;
+	}
 
 	ocl->k = k;
 
@@ -691,7 +700,14 @@ cl_uint SetKernelArguments(ocl_args_d_t *ocl)
         return err;
     }
 
-	err = clSetKernelArg(ocl->kernel, 2, sizeof(cl_uint), (void *)&ocl->k);
+	err = clSetKernelArg(ocl->kernel, 2, sizeof(cl_mem), (void *)&ocl->centroid_assignments);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: Failed to set argument centroids, returned %s\n", TranslateOpenCLError(err));
+		return err;
+	}
+
+	err = clSetKernelArg(ocl->kernel, 3, sizeof(cl_uint), (void *)&ocl->k);
 	if (CL_SUCCESS != err)
 	{
 		LogError("Error: Failed to set argument k, returned %s\n", TranslateOpenCLError(err));
@@ -736,14 +752,14 @@ cl_uint ExecuteClusteringKernel(ocl_args_d_t *ocl, cl_uint width, cl_uint height
 /*
  * "Read" the result buffer (mapping the buffer to the host memory address)
  */
-bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_uchar2* centroids, cl_uint width, cl_uint height, const cl_uint k)
+bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_float2* image_data, cl_float2* centroids, cl_uint width, cl_uint height, const cl_uint k, bool colorize=false)
 {
     cl_int err = CL_SUCCESS;
     bool result = true;
 
 	// Enqueue a command to map the buffer object (ocl->dstMem) into the host address space and returns a pointer to it
 	// The map operation is blocking
-	cl_uchar3 *resultPtr = (cl_uchar3 *)clEnqueueMapBuffer(ocl->commandQueue, ocl->image_data, true, CL_MAP_READ, 0, sizeof(cl_uchar3) * width * height, 0, NULL, NULL, &err);
+	cl_float *resultPtr = (cl_float *)clEnqueueMapBuffer(ocl->commandQueue, ocl->centroid_assignments, true, CL_MAP_READ, 0, sizeof(cl_float) * width * height, 0, NULL, NULL, &err);
 
 	if (CL_SUCCESS != err)
 	{
@@ -758,24 +774,35 @@ bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_uchar2* centroids, cl_uin
 		LogError("Error: clFinish returned %s\n", TranslateOpenCLError(err));
 	}
 
-	// centroids {x,y,z} = {u, v, cluster assignment}
-	// mean_centroids {x,y,z} = {u sum, v sum, pixel count}
-	cl_uint3* mean_centroids = (cl_uint3*)malloc(sizeof(cl_uint3)*k);
-	memset(mean_centroids, 0, sizeof(mean_centroids));
+	if (colorize) {
+		for (cl_uint i = 0; i < width*height; i++) {
+			int centroid = (int)resultPtr[i];
+			cl_float2 average = centroids[centroid];
+			image_data[i] = average;
+		}
+	}
+	else {
+		cl_float2* mean_centroids = (cl_float2*)malloc(sizeof(cl_float2)*k);
+		cl_float* centroids_count = (cl_float*)malloc(sizeof(cl_float)*k);
+		memset(mean_centroids, 0, sizeof(cl_float2)*k);
+		memset(centroids_count, 0, sizeof(cl_float)*k);
+		for (cl_uint i = 0; i < width*height; i++) {
+			int centroid = (int)resultPtr[i];
+			mean_centroids[centroid].x += image_data[i].x;
+			mean_centroids[centroid].y += image_data[i].y;
+			centroids_count[centroid] += 1;
+		}
 
-	for (int i = 0; i < width*height; i++) {
-		int centroid = resultPtr[i].z;
-		mean_centroids[centroid].x += resultPtr[i].x;
-		mean_centroids[centroid].y += resultPtr[i].y;
-		mean_centroids[centroid].z += 1;
+		for (cl_uint i = 0; i < k; i++) {
+			centroids[i].x = (unsigned long)(mean_centroids[i].x / centroids_count[i]);
+			centroids[i].y = (unsigned long)(mean_centroids[i].y / centroids_count[i]);
+
+			printf("%i: mean: %f, %f\n", i, centroids[i].x, centroids[i].y);
+		}
+		free(mean_centroids);
+		free(centroids_count);
 	}
 
-	for (int i = 0; i < k; i++) {
-		centroids[i].x = mean_centroids[i].x / mean_centroids[i].z;
-		centroids[i].y = mean_centroids[i].y / mean_centroids[i].z;
-	}
-
-	free(mean_centroids);
 
 
 	printf("Don't forget to unmap buffer!\n");
@@ -789,7 +816,7 @@ bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_uchar2* centroids, cl_uin
     return result;
 }
 
-int get_centroids(cl_uchar2* centroids, cl_uchar3* image_data, int width, int height) {
+int get_centroids(cl_float2* centroids, cl_float2* image_data, unsigned int width, unsigned int height) {
 	int k = 0;
 	// max out k at the un-aligned buffer size... don't think we'll ever get here
 	while (k < width*height) {
@@ -806,10 +833,10 @@ int get_centroids(cl_uchar2* centroids, cl_uchar3* image_data, int width, int he
 		}
 
 		size_t i = centroid.find(',');
-		cl_uchar2 coord;
+		cl_float2 coord;
 		unsigned int index;
-		coord.x = (cl_uchar)std::stoi(centroid.substr(0, i));
-		coord.y = (cl_uchar)std::stoi(centroid.substr(i + 1));
+		coord.x = (cl_float)std::stoi(centroid.substr(0, i));
+		coord.y = (cl_float)std::stoi(centroid.substr(i + 1));
 		index = coord.y*width + coord.x;
 		if (index >= width*height) {
 			printf("> Error: coordinate out of bounds\n");
@@ -818,7 +845,7 @@ int get_centroids(cl_uchar2* centroids, cl_uchar3* image_data, int width, int he
 		centroids[k].x = image_data[index].x;
 		centroids[k].y = image_data[index].y;
 		k++;
-		printf("> k=%i (u=%i, v=%i)\n", k, image_data[index].x, image_data[index].y);
+		printf("> k=%i (u=%f, v=%f)\n", k, image_data[index].x, image_data[index].y);
 	}
 	return k;
 }
@@ -862,11 +889,15 @@ int _tmain(int argc, TCHAR* argv[])
 	 * Allocate working buffers.
 	 * The buffers should be aligned with 4K page and size should fit 64-byte cached line
 	 */
-	cl_uint image_data_opt_size = ((sizeof(cl_uchar3) * width * height - 1) / 64 + 1) * 64;
-	cl_uchar3* image_data = (cl_uchar3*)_aligned_malloc(image_data_opt_size, 4096);
+	cl_uint image_data_opt_size = ((sizeof(cl_float2) * width * height - 1) / 64 + 1) * 64;
+	cl_float2* image_data = (cl_float2*)_aligned_malloc(image_data_opt_size, 4096);
 
-	cl_uint centroid_opt_size = ((sizeof(cl_uchar2) * 255 - 1) / 64 + 1) * 64;
-	cl_uchar2* centroids = (cl_uchar2*)_aligned_malloc(centroid_opt_size, 4096);
+	cl_uint centroid_opt_size = ((sizeof(cl_float2) * 255 - 1) / 64 + 1) * 64;
+	cl_float2* centroids = (cl_float2*)_aligned_malloc(centroid_opt_size, 4096);
+
+	cl_uint centroid_assignments_opt_size = ((sizeof(cl_float) * width * height - 1) / 64 + 1) * 64;
+	cl_float* centroid_assignments = (cl_float*)_aligned_malloc(centroid_assignments_opt_size, 4096);
+	memset(centroid_assignments, 0, centroid_assignments_opt_size);
 
 	if (NULL == image_data || NULL == centroids) {
 		LogError("Error: _aligned_malloc failed to allocate buffers.\n");
@@ -908,7 +939,7 @@ int _tmain(int argc, TCHAR* argv[])
 
 	// Create OpenCL buffers from host memory
 	// These buffers will be used later by the OpenCL kernel
-	if (CL_SUCCESS != CreateBufferArguments(&ocl, image_data, centroids, k, width*height))
+	if (CL_SUCCESS != CreateBufferArguments(&ocl, image_data, centroids, centroid_assignments, k, width*height))
 	{
 		return -1;
 	}
@@ -938,6 +969,9 @@ int _tmain(int argc, TCHAR* argv[])
 	/*
 	 * Enqueue Kernel
 	 */
+
+	QueryPerformanceCounter(&performanceCountNDRangeStart);
+
 	do {
 		memcpy(centroid_cache, centroids, sizeof(centroid_cache));
 
@@ -946,12 +980,15 @@ int _tmain(int argc, TCHAR* argv[])
 			return -1;
 		}
 
-		ReadAndComputeMeanCentroids(&ocl, centroids, width, height, k);
+		ReadAndComputeMeanCentroids(&ocl, image_data, centroids, width, height, k);
 
 	} while (memcmp(centroid_cache, centroids, sizeof(centroid_cache)) != 0);
+	QueryPerformanceCounter(&performanceCountNDRangeStop);
+	QueryPerformanceFrequency(&perfFrequency);
+	LogInfo("NDRange performance counter time %f ms.\n",
+		1000.0f*(float)(performanceCountNDRangeStop.QuadPart - performanceCountNDRangeStart.QuadPart) / (float)perfFrequency.QuadPart);
 
-
-
+	ReadAndComputeMeanCentroids(&ocl, image_data, centroids, width, height, k, true);
 
 	/*
 	 * Convert cl_buffer back to bmp buffer and back to RGB colorspace

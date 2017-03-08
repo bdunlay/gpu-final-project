@@ -21,8 +21,9 @@
  *****************************************************************************/
 
 __kernel void assign_cluster(
-		__global uchar3* image_data, 
-		__global uchar2* centroids,
+		__global float2* image_data, 
+		__global float2* centroids,
+		__global float* centroid_assignments,
 	    uint k)
 {
     const int x     = get_global_id(0);
@@ -30,21 +31,18 @@ __kernel void assign_cluster(
     const int width = get_global_size(0);
     const int id = y * width + x;
 
-	int min_dist = 0;
+	int min_dist = -1;
 	int cluster = 0;
+	float2 pixel = image_data[id];
 
 	for (int i = 0; i < k; i++) {
-		uint c_u = centroids[id].x;
-		uint u = image_data[id].x;
-		uint c_v = centroids[id].y;
-		uint v = image_data[id].y;
-
-		uint res = sqrt(pow((c_u-u),2) + pow((c_v-v),2));
-		if (res < min_dist) {
+		float res = distance(centroids[i], pixel);
+		if (min_dist == -1 || res < min_dist) {
 			min_dist = res;
-			cluster = i; 
+			cluster = i;
 		}
 	}
 
-	image_data[id].z = cluster;
+	centroid_assignments[id] = cluster;
 }
+

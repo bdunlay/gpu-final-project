@@ -59,5 +59,5 @@ void convert_colorspace(
 
 void convert_buffer(
 	_Inout_ unsigned char* bmp_data,
-	_Inout_ cl_uchar3* cl_buffer,
+	_Inout_ cl_float2* cl_buffer,
 	_In_ const BUFFER_CONVERSION_TYPE direction);
