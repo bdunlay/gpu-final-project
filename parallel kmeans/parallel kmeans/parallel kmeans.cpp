@@ -145,6 +145,7 @@ struct ocl_args_d_t
     // Objects that are specific for algorithm implemented in this sample
     cl_mem           image_data;              // hold first source buffer
     cl_mem           centroids;              // hold second source buffer
+	cl_uint			 k;
 };
 
 ocl_args_d_t::ocl_args_d_t():
@@ -663,6 +664,8 @@ int CreateBufferArguments(ocl_args_d_t *ocl, cl_uchar3* image_data, cl_uchar2* c
         return err;
     }
 
+	ocl->k = k;
+
     return CL_SUCCESS;
 }
 
@@ -677,16 +680,23 @@ cl_uint SetKernelArguments(ocl_args_d_t *ocl)
     err  =  clSetKernelArg(ocl->kernel, 0, sizeof(cl_mem), (void *)&ocl->image_data);
     if (CL_SUCCESS != err)
     {
-        LogError("error: Failed to set argument srcA, returned %s\n", TranslateOpenCLError(err));
+        LogError("error: Failed to set argument image_data, returned %s\n", TranslateOpenCLError(err));
         return err;
     }
 
     err  = clSetKernelArg(ocl->kernel, 1, sizeof(cl_mem), (void *)&ocl->centroids);
     if (CL_SUCCESS != err)
     {
-        LogError("Error: Failed to set argument srcB, returned %s\n", TranslateOpenCLError(err));
+        LogError("Error: Failed to set argument centroids, returned %s\n", TranslateOpenCLError(err));
         return err;
     }
+
+	err = clSetKernelArg(ocl->kernel, 2, sizeof(cl_uint), (void *)&ocl->k);
+	if (CL_SUCCESS != err)
+	{
+		LogError("Error: Failed to set argument k, returned %s\n", TranslateOpenCLError(err));
+		return err;
+	}
 
     return err;
 }
@@ -852,10 +862,12 @@ int _tmain(int argc, TCHAR* argv[])
 	 * Allocate working buffers.
 	 * The buffers should be aligned with 4K page and size should fit 64-byte cached line
 	 */
-	cl_uint image_data_opt_size = ((sizeof(cl_uchar2) * width * height - 1) / 64 + 1) * 64;
-	cl_uint centroid_opt_size = ((sizeof(cl_uchar2) * 255 - 1) / 64 + 1) * 64;
+	cl_uint image_data_opt_size = ((sizeof(cl_uchar3) * width * height - 1) / 64 + 1) * 64;
 	cl_uchar3* image_data = (cl_uchar3*)_aligned_malloc(image_data_opt_size, 4096);
+
+	cl_uint centroid_opt_size = ((sizeof(cl_uchar2) * 255 - 1) / 64 + 1) * 64;
 	cl_uchar2* centroids = (cl_uchar2*)_aligned_malloc(centroid_opt_size, 4096);
+
 	if (NULL == image_data || NULL == centroids) {
 		LogError("Error: _aligned_malloc failed to allocate buffers.\n");
 		return -1;
@@ -922,8 +934,6 @@ int _tmain(int argc, TCHAR* argv[])
 	{
 		return -1;
 	}
-
-
 
 	/*
 	 * Enqueue Kernel

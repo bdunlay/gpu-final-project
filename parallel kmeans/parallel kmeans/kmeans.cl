@@ -28,6 +28,23 @@ __kernel void assign_cluster(
     const int x     = get_global_id(0);
     const int y     = get_global_id(1);
     const int width = get_global_size(0);
-
     const int id = y * width + x;
+
+	int min_dist = 0;
+	int cluster = 0;
+
+	for (int i = 0; i < k; i++) {
+		uint c_u = centroids[id].x;
+		uint u = image_data[id].x;
+		uint c_v = centroids[id].y;
+		uint v = image_data[id].y;
+
+		uint res = sqrt(pow((c_u-u),2) + pow((c_v-v),2));
+		if (res < min_dist) {
+			min_dist = res;
+			cluster = i; 
+		}
+	}
+
+	image_data[id].z = cluster;
 }

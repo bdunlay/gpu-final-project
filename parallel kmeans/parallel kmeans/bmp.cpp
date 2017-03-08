@@ -88,22 +88,30 @@ void convert_buffer(unsigned char * bmp_data, cl_uchar3 * cl_buffer, const BUFFE
 	int image_data_offset = *(int*)&bmp_data[IMAGE_DATA_OFFSET_INDEX];
 
 	// Image row width without padding
-	int image_row_width = 4 * ((24 * width + 31) / 32);
+	int padded_row = 4 * ((24 * width + 31) / 32);
 
+	int index = 0;
 	for (int row = 0; row < height; row++) {
-		unsigned char* row_data = bmp_data + image_data_offset + row*image_row_width;
-		for (int col = 0; col < width; col++) {
-			int pixel_start = 3*col;
-			int i = row*height + col;
+		unsigned char* row_data = bmp_data + image_data_offset + row*padded_row;
+		for (int pixel = 0; pixel < width; pixel++) {
+			int pixel_start = pixel * 3;
+
+			// Extract the original values
 
 			if (direction == CONVERT_BMP2CLBUF) {
-				cl_buffer[i].x = bmp_data[pixel_start + 1];
-				cl_buffer[i].y = bmp_data[pixel_start + 2];
+				// (R, G, B) = (c, b, a)
+				cl_uchar u = row_data[pixel_start + 1];
+				cl_uchar v = row_data[pixel_start + 2];
+				cl_buffer[index].x = u;
+				cl_buffer[index].y = v;
 			}
 			else {
-				bmp_data[pixel_start + 1] = cl_buffer[i].x;
-				bmp_data[pixel_start + 2] = cl_buffer[i].y;
+				cl_uchar u = cl_buffer[index].x;
+				cl_uchar v = cl_buffer[index].y;
+				cl_buffer[pixel_start + 1].x = u;
+				cl_buffer[pixel_start + 2].y = v;
 			}
+			index++;
 		}
 	}
 }
