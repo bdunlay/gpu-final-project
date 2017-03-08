@@ -1039,6 +1039,7 @@ int _tmain(int argc, TCHAR* argv[])
     _aligned_free(image_data);
 	_aligned_free(centroids);
 	_aligned_free(centroid_cache);
+	_aligned_free(centroid_assignments);
 	free(bmp_buffer);
 
     return 0;
