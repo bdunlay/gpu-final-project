@@ -1,0 +1,205 @@
+\title{K-Means Parallelization \\
+	Final Project Report
+\author{Brian Dunlay\\
+	EE590A - Winter 2017
+}
+\date{\today}
+
+\documentclass[11pt]{article}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\newcommand{\BigO}[1]{\ensuremath{\operatorname{O}\bigl(#1\bigr)}}
+
+\begin{document}
+\maketitle
+
+\section*{Overview}
+
+K-Means Clustering is vector quantization algorithm. Given a set of k centroids
+(or initial values), it groups similar data points together by associating each 
+data point with its most similar centroid. Centroids are moved by taking the 
+average value of the cluster, and this process is repeated until convergence. I
+have applied this algorithm with image processing with the goal of segmenting 
+an images by color. 
+
+\subsection{Iterative Algorithm}
+
+\begin{enumerate}
+\item Choose k centroids $C = {c_1, c_2, \cdots, c_k}$
+\item For each $i \in {1, \cdots, k}$, set the cluster $C_i$ to be the set of points in $X$ that are closer to $c_i$ than they are to $c_j$ for all $j \neq i$
+\item For each $i \in {1, \cdots, k}$, set $c_i$ to be the center of mass of all points in $C_i$: $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$
+\item Repeat Steps 2 and 3 until $C$ no longer changes
+\end{enumerate}
+
+\subsection{Implementation}
+
+In order to run the program, a set of command line arguments must be provided.
+
+\begin{enumerate}
+\item Input file path (bmp)
+\item Output file path
+\item 2 or more x,y pixel coordinates (value taken from each as initial centroids)
+\end{enumerate}
+
+The BMP format is preferred for this project due to its simplicity. The header
+contains the dimensions of the image, and the pixels are stored as three bytes
+of Blue, Green, and Red in that order. \cite{bmp_wiki}
+
+The BMP file is read into memory and OpenCL Buffers are allocated. In order to
+simplify the kernel processing, I extracted the image data from the bmp file in
+memory into a linear buffer. 
+
+BMP format specifies that each line of the image is stored with 4-byte alignment,
+so care was taken to avoid padding data when copying image bytes between buffers.
+
+The RGB data is then converted into YUV colorspace as a pre-processing step.
+
+In my design specification, I calculated the AI of the kernel to be 
+$\frac{K3D+K}{KD+D+1}$ where $K$ is the number of centroids, $D$ is dimension and 
+D is the colorspace dimension. RGB is three dimensional while a commonly used
+colorspace YUV is two dimensional if we ignore the Y (luma) component. Instead of 
+computing the distance between pixels and centroids in three dimensional space, 
+the distance can be computed using two the two-dimensional space of YUV, reducing 
+the computational complexity slightly. 
+
+There are other reasons for choosing YUV colorspace, but I will not elaborate for
+this project.
+
+Interestingly, regardless of the dimension chosen, the AI remains nearly the same. 
+Computing the AI with $K = 5$ and $D = 3$ (and using Floats) yields $.3448$. The AI
+is very similar when reducing the dimensionality to $D = 2$, yielding $.3608$
+
+Also notable, as $K$ grows, the AI only increases slightly as the the numerator and 
+denominator cancel one another out (plateauing around about $.437$)
+
+After the buffer is converted to YUV colorspace, the centroid values are cached
+and the kernel executes with a buffer of $K$ centroids and a buffer of image data.
+Every kernel operates on a single pixel, where the distance between the pixel
+and each centroid is calculated. A third buffer of $MxN$ is used as a one-to-one 
+centroid-assignment. Each index of the centroid-assignment buffer corresponds with
+a pixel in the buffer, and the minimum distance centroid index is assigned to its
+respective position.
+
+Back on the host, the centroid-assignment buffer is iterated over and centroid 
+averages are calculated. These averages are compared against the cache, and if they
+do not match, the kernel is run again. This repeats until convergence.
+
+
+
+
+\section{K-Means Equations}
+
+K-means is a clustering algorithm. Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim to choose $k$ centers $C$ so as to minimize the following function \cite{arthur}:
+\newline
+
+\begin{math}
+\phi = \displaystyle\sum_{x \in X} min_{c \in C }\| x - c \|^2
+\end{math}
+
+\section{Sequential Reference}
+
+I wrote a sequential reference in C++ in order to achieve a baseline. I found that
+it is less computationally intensive to convert the image to the YUV color space and
+do a comparison (euclidean distance) between points than it would have been to do
+the same in RGB colorspace.
+
+I did not time the colorspace conversions given the fact that it is not relevant to the
+immediate problem (K-Means clustering), however the conversion would be easily
+parallelizable.
+
+For a visual indication of the result of the k-means clustering, I colorized the clusters
+based upon their mean color value along with a constant luma value. This was also omitted
+from the timing of the runtime.
+
+
+\subsection{Sample Image}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fruit.png}
+    \caption{Image\cite{fruit} before segmentation}
+    \label{fig:fruit}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fruit-segmented.png}
+    \caption{Image after segmentation}
+    \label{fig:fruit-segmented}
+\end{figure}
+
+This image was segmented based on 5 coordinates that were hand-picked as input to the program.
+The average runtime over 30 runs for processing this image was 3.026 seconds.
+
+See \emph{results.txt} for individual runtime samples.
+
+\subsection{Code}
+
+See \emph{sequential-kmeans.cpp} for the sequential code reference implementation.
+
+\section{Complexity Analysis}
+
+\subsection{Algorithmic Complexity}
+
+There are two primary stages of this algorithm, and I will analyize each of them individually.
+It should be noted that sinces the algorithm is iterative until convergence is reached, there
+is a unknown factor in which we will recalculate the following two steps. In most cases it
+should be much less than N.
+
+\subsubsection{Clustering}
+
+The first stage is clustering each pixel in the image with an associated group. For
+each pixel $x_i$ in the image, we compute the euclidean distance between $x_i$
+and each centroid $c_i$ with dimensionality $D$.
+
+$\BigO{NKD}$
+
+Where $N$ is the number of pixels in the image and $K$ is the number of centroids. As
+previously mentioned, there is a slight reduction in the algorithmic complexity by
+reducing the dimensionality of the colorspace from 3 (RGB) to 2 (U and V of YUV).
+
+$D$ could technically be omitted given that it is a constant that is likely smaller
+than $K$ and likely significantly smaller than $N$.
+
+\subsubsection{Mean centroid calculation}
+
+The second stage is to calculate the average value for all pixels in a particular cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$ where we are calculating a summation of $D$ values over $N$ data points.
+
+\subsection{Arithmetic Intensity}
+
+The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4) square root. $\text{FLOPS} = K(3D+1)$.
+
+The data access of the clustering step is $KD+D$ reads (where one byte is read per dimension) and the $1$ write (the cluster id) for a total of $KD+D+1$.
+
+The AI is therefore $\frac{K3D+K}{KD+D+1}$
+
+\section{Parallel Pseudo-Code}
+
+See \emph{parallel-kmeans.cl} for the parallel pseudo-code implementation.
+
+\begin{thebibliography}{9}
+
+\bibitem{bmp_wiki}
+  Multiple contributors,
+  Accessed 3/8/2017,
+  \emph{BMP file format},
+  https://en.wikipedia.org/wiki/BMP_file_format
+
+\bibitem{arthur}
+  David Arthur and Sergei Vassilvitskii,
+  \emph{k-means++: The Advantages of Careful Seeding},
+  http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf
+
+\bibitem{mipro}
+  J. Sirotkovi, H.Dujmi, V. Papi
+  \emph{K-Means Image Segmentation on Massively Parallel GPU Architecture}
+
+\bibitem{fruit}
+  Didriks,
+  \emph{Fruit Salad},
+  https://flic.kr/p/a6W1Te
+
+\end{thebibliography}
+
+\end{document}
+This is never printed
