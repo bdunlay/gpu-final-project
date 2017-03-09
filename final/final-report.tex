@@ -22,6 +22,14 @@ average value of the cluster, and this process is repeated until convergence. I
 have applied this algorithm with image processing with the goal of segmenting 
 an images by color. 
 
+Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim 
+to choose $k$ centers $C$ so as to minimize the following function \cite{arthur}:
+\newline
+
+\begin{math}
+\phi = \displaystyle\sum_{x \in X} min_{c \in C }\| x - c \|^2
+\end{math}
+
 \subsection{Iterative Algorithm}
 
 \begin{enumerate}
@@ -84,35 +92,37 @@ Back on the host, the centroid-assignment buffer is iterated over and centroid
 averages are calculated. These averages are compared against the cache, and if they
 do not match, the kernel is run again. This repeats until convergence.
 
+\section{Results}
 
+\subsection{Sequential}
 
+I wrote a sequential reference in C++ in order to achieve a baseline prior to implemeting
+my parallelized code using OpenCL and a GPU.
 
-\section{K-Means Equations}
-
-K-means is a clustering algorithm. Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim to choose $k$ centers $C$ so as to minimize the following function \cite{arthur}:
-\newline
-
-\begin{math}
-\phi = \displaystyle\sum_{x \in X} min_{c \in C }\| x - c \|^2
-\end{math}
-
-\section{Sequential Reference}
-
-I wrote a sequential reference in C++ in order to achieve a baseline. I found that
-it is less computationally intensive to convert the image to the YUV color space and
-do a comparison (euclidean distance) between points than it would have been to do
-the same in RGB colorspace.
+It should be noted that the sequential code was not written using OpenCL. Instead, standard C++ 
+was used along with LLVM clang on a fairly standard CPU (Intel i3 circa 2013). I suspect that 
+had it been written using OpenCL vector data types and using OpenCL APIs (e.g. 
+\textit{distance(floatn, floatn)}, there would  have been a significant improvement due to, 
+at minimum, better SIMD exploitation. Regardless, it serves as a good baseline for how an 
+iterative algorithm might perform on standard hardware using typical tools without parallelized
+optimization techniques.
 
 I did not time the colorspace conversions given the fact that it is not relevant to the
-immediate problem (K-Means clustering), however the conversion would be easily
-parallelizable.
+immediate problem (K-Means clustering), however the conversion could be parallelized.
 
 For a visual indication of the result of the k-means clustering, I colorized the clusters
 based upon their mean color value along with a constant luma value. This was also omitted
 from the timing of the runtime.
 
+This image was segmented based on 5 coordinates that were hand-picked as input to the program.
+The average runtime over 30 runs for processing this image was \emph{3.026 seconds}.
 
-\subsection{Sample Image}
+\subsection{Parallel}
+
+Again using 5 hand-picked coordinates as inputs, I ran the program 30 times and recorded an
+average of \emph{105.23 ms}
+
+\subsection{Sample Images}
 
 \begin{figure}[ht]
     \centering
@@ -121,17 +131,24 @@ from the timing of the runtime.
     \label{fig:fruit}
 \end{figure}
 
+
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.6\textwidth]{fruit-segmented.png}
-    \caption{Image after segmentation}
-    \label{fig:fruit-segmented}
+    \includegraphics[width=0.6\textwidth]{fruit-segmented-cpu.png}
+    \caption{Image after segmentation (CPU)}
+    \label{fig:fruit-segmented-cpu}
 \end{figure}
 
-This image was segmented based on 5 coordinates that were hand-picked as input to the program.
-The average runtime over 30 runs for processing this image was 3.026 seconds.
 
-See \emph{results.txt} for individual runtime samples.
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fruit-segmented-gpu.png}
+    \caption{Image after segmentation (GPU)}
+    \label{fig:fruit-segmented-gpu}
+\end{figure}
+
+
+
 
 \subsection{Code}
 
