@@ -1,5 +1,5 @@
 \title{K-Means Parallelization \\
-	Final Project Report
+	Final Project Report}
 \author{Brian Dunlay\\
 	EE590A - Winter 2017
 }
@@ -16,13 +16,13 @@
 \section*{Overview}
 
 K-Means Clustering is vector quantization algorithm. Given a set of k centroids
-(or initial values), it groups similar data points together by associating each 
-data point with its most similar centroid. Centroids are moved by taking the 
+(or initial values), it groups similar data points together by associating each
+data point with its most similar centroid. Centroids are moved by taking the
 average value of the cluster, and this process is repeated until convergence. I
-have applied this algorithm with image processing with the goal of segmenting 
-an images by color. 
+have applied this algorithm with image processing with the goal of segmenting
+an images by color.
 
-Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim 
+Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim
 to choose $k$ centers $C$ so as to minimize the following function \cite{arthur}:
 \newline
 
@@ -55,41 +55,41 @@ of Blue, Green, and Red in that order. \cite{bmp_wiki}
 
 The BMP file is read into memory and OpenCL Buffers are allocated. In order to
 simplify the kernel processing, I extracted the image data from the bmp file in
-memory into a linear buffer. 
+memory into a linear buffer.
 
 BMP format specifies that each line of the image is stored with 4-byte alignment,
 so care was taken to avoid padding data when copying image bytes between buffers.
 
 The RGB data is then converted into YUV colorspace as a pre-processing step.
 
-In my design specification, I calculated the AI of the kernel to be 
-$\frac{K3D+K}{KD+D+1}$ where $K$ is the number of centroids, $D$ is dimension and 
+In my design specification, I calculated the AI of the kernel to be
+$\frac{K3D+K}{KD+D+1}$ where $K$ is the number of centroids, $D$ is dimension and
 D is the colorspace dimension. RGB is three dimensional while a commonly used
-colorspace YUV is two dimensional if we ignore the Y (luma) component. Instead of 
-computing the distance between pixels and centroids in three dimensional space, 
-the distance can be computed using two the two-dimensional space of YUV, reducing 
+colorspace YUV is two dimensional if we ignore the Y (luma) component. Instead of
+computing the distance between pixels and centroids in three dimensional space,
+the distance can be computed using two the two-dimensional space of YUV, reducing
 the computational complexity slightly. The \emph{Big O} complexity is examined
 further in this paper.
 
 There are other reasons for choosing YUV colorspace, but I will not elaborate for
 this project.
 
-Interestingly, regardless of the dimension chosen, the AI remains nearly the same. 
+Interestingly, regardless of the dimension chosen, the AI remains nearly the same.
 Computing the AI with $K = 5$ and $D = 3$ (and using Floats) yields $.3448$. The AI
 is very similar when reducing the dimensionality to $D = 2$, yielding $.3608$
 
-Also notable, as $K$ grows, the AI only increases slightly as the the numerator and 
+Also notable, as $K$ grows, the AI only increases slightly as the the numerator and
 denominator cancel one another out (plateauing around about $.437$)
 
 After the buffer is converted to YUV colorspace, the centroid values are cached
 and the kernel executes with a buffer of $K$ centroids and a buffer of image data.
 Every kernel operates on a single pixel, where the distance between the pixel
-and each centroid is calculated. A third buffer of $MxN$ is used as a one-to-one 
+and each centroid is calculated. A third buffer of $MxN$ is used as a one-to-one
 centroid-assignment. Each index of the centroid-assignment buffer corresponds with
 a pixel in the buffer, and the minimum distance centroid index is assigned to its
 respective position.
 
-Back on the host, the centroid-assignment buffer is iterated over and centroid 
+Back on the host, the centroid-assignment buffer is iterated over and centroid
 averages are calculated. These averages are compared against the cache, and if they
 do not match, the kernel is run again. This repeats until convergence.
 
@@ -100,11 +100,11 @@ do not match, the kernel is run again. This repeats until convergence.
 I wrote a sequential reference in C++ in order to achieve a baseline prior to implemeting
 my parallelized code using OpenCL and a GPU.
 
-It should be noted that the sequential code was not written using OpenCL. Instead, standard C++ 
-was used along with LLVM clang on a fairly standard CPU (Intel i3 circa 2013). I suspect that 
-had it been written using OpenCL vector data types and using OpenCL APIs (e.g. 
-\textit{distance(floatn, floatn)}, there would  have been a significant improvement due to, 
-at minimum, better SIMD exploitation. Regardless, it serves as a good baseline for how an 
+It should be noted that the sequential code was not written using OpenCL. Instead, standard C++
+was used along with LLVM clang on a fairly standard CPU (Intel i3 circa 2013). I suspect that
+had it been written using OpenCL vector data types and using OpenCL APIs (e.g.
+\textit{distance(floatn, floatn)}, there would  have been a significant improvement due to,
+at minimum, better SIMD exploitation. Regardless, it serves as a good baseline for how an
 iterative algorithm might perform on standard hardware using typical tools without parallelized
 optimization techniques.
 
@@ -154,13 +154,13 @@ average of \emph{105.23 ms}
 \subsection{Kernel Analysis}
 
 I ran the kernel with random data using the Visual Studio IDE's OpenCL Session Analyser to get
-an idea of kernel performance. Using random "image data" of 1024x800 and a $K$ of 5, I saw 
-fairly good results. 
+an idea of kernel performance. Using random "image data" of 1024x800 and a $K$ of 5, I saw
+fairly good results.
 
 \begin{itemize}
-\item Kernel EU utilization: \emph{86.8%}. 
-\item Kernel on GPU: \emph{.76 ms} execution time. 
-\item Kernel on CPU: \emph{2.5 ms} execution time. 
+\item Kernel EU utilization: \emph{86.8\%}.
+\item Kernel on GPU: \emph{0.76 ms} execution time.
+\item Kernel on CPU: \emph{2.5 ms} execution time.
 \end{itemize}
 
 My most latent operations were in accessing memory. I optimized this by accessing the pixel value
@@ -168,9 +168,9 @@ only once rather than per distance calculation.
 
 I took a big performance hit by implementing the algorithm as a split CPU/GPU task. Looking
 at individual actual run analysis results, the individual kernel execution times had an average
-duration of \emph{670.775 us} and a total duration of \emph{10061.625 us}. The iterative 
-calculations for mean centroid values and the memory transfer between CPU and GPU for each 
-iteration accounted for the large majority of the runtime. 
+duration of \emph{670.775 us} and a total duration of \emph{10061.625 us}. The iterative
+calculations for mean centroid values and the memory transfer between CPU and GPU for each
+iteration accounted for the large majority of the runtime.
 
 \subsection{Algorithmic Complexity}
 
@@ -196,14 +196,14 @@ than $K$ and likely significantly smaller than $N$.
 
 \subsubsection{Mean centroid calculation}
 
-The second stage is to calculate the average value for all pixels in a particular 
-cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$ 
+The second stage is to calculate the average value for all pixels in a particular
+cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$
 where we are calculating a summation of $D$ values over $N$ data points.
 
 \subsection{Arithmetic Intensity}
 
-The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference 
-between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4) 
+The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference
+between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4)
 square root. $\text{FLOPS} = K(3D+1)$.
 
 The data access of the clustering step is $KD+D$ reads (where one byte is read per dimension)
@@ -213,13 +213,13 @@ The AI is therefore $\frac{K3D+K}{KD+D+1}$
 
 \section{Conclusion}
 
-The problem itself, despite being a fairly simple algorithm, was clearly a good candidate for 
+The problem itself, despite being a fairly simple algorithm, was clearly a good candidate for
 parallelization. The data independence of all pixels made excellent use of the EUs when enqueued
 to the GPU, and out-of-order access was limited (unlike what you might see in matrix multiplication,
 for example).
 
 While my implementation did see quite an improvement from the sequential implementation, there is still
-plenty of room for improvement. A good place to start would be in storing the pixel values for each 
+plenty of room for improvement. A good place to start would be in storing the pixel values for each
 centroid assignment in a respective centroid buffer -- perhaps using atomic index increments to synchronize
 data writes. Then, device-side enqueueing could be used to perform a reduction on each of those buffers
 to calculate the mean centroid values, until convergence.
@@ -231,7 +231,7 @@ to calculate the mean centroid values, until convergence.
   Multiple contributors,
   Accessed 3/8/2017,
   \emph{BMP file format},
-  https://en.wikipedia.org/wiki/BMP_file_format
+  https://en.wikipedia.org/wiki/BMP\_file\_format
 
 \bibitem{arthur}
   David Arthur and Sergei Vassilvitskii,
@@ -250,7 +250,7 @@ to calculate the mean centroid values, until convergence.
 \bibitem{cv-book}
   Richard Szeliski,
   \emph{Computer Vision: Algorithms and Applications},
-  http://szeliski.org/Book/drafts/SzeliskiBook_20100903_draft.pdf
+  http://szeliski.org/Book/drafts/SzeliskiBook\_20100903\_draft.pdf
 
 
 \end{thebibliography}
