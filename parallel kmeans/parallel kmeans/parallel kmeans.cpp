@@ -855,7 +855,7 @@ int main(int argc, char* argv[])
 	int k = (argc - 3);
 
 	printf("> input: %s\n", filename.c_str());
-	printf("> output: %s\n", filename.c_str());
+	printf("> output: %s\n", output_filename.c_str());
 	printf("> --------------------------------------\n");
 	printf("> k = %i\n", k);
 	printf("> --------------------------------------\n");
