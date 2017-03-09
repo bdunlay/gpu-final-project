@@ -63,7 +63,7 @@ void convert_colorspace(unsigned char * data, COLORSPACE_CONVERSION_TYPE directi
 
 			if (direction == CONVERT_RGB2YUV) {
 				// (R, G, B) = (c, b, a)
-				out_a = RGB2Y(c, b, a);
+				out_a = RGB2Y(100, 100, 0);
 				out_b = RGB2U(c, b, a);
 				out_c = RGB2V(c, b, a);
 			}

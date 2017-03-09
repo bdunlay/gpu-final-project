@@ -515,7 +515,7 @@ int SetupOpenCL(ocl_args_d_t *ocl, cl_device_type deviceType)
 
     // Query for all available OpenCL platforms on the system
     // Here you enumerate all platforms and pick one which name has preferredPlatform as a sub-string
-    cl_platform_id platformId = FindOpenCLPlatform(NULL, deviceType);
+	cl_platform_id platformId = FindOpenCLPlatform("Intel", deviceType);
     if (NULL == platformId)
     {
         LogError("Error: Failed to find OpenCL platform.\n");
@@ -796,58 +796,34 @@ bool ReadAndComputeMeanCentroids(ocl_args_d_t *ocl, cl_float2* image_data, cl_fl
 		for (cl_uint i = 0; i < k; i++) {
 			centroids[i].x = (unsigned long)(mean_centroids[i].x / centroids_count[i]);
 			centroids[i].y = (unsigned long)(mean_centroids[i].y / centroids_count[i]);
-
-			printf("%i: mean: %f, %f\n", i, centroids[i].x, centroids[i].y);
 		}
 		free(mean_centroids);
 		free(centroids_count);
 	}
 
-
-
-	printf("Don't forget to unmap buffer!\n");
      // Unmapped the output buffer before releasing it
-    //err = clEnqueueUnmapMemObject(ocl->commandQueue, ocl->dstMem, resultPtr, 0, NULL, NULL);
-    //if (CL_SUCCESS != err)
-    //{
-    //    LogError("Error: clEnqueueUnmapMemObject returned %s\n", TranslateOpenCLError(err));
-   // }
+    err = clEnqueueUnmapMemObject(ocl->commandQueue, ocl->centroid_assignments, resultPtr, 0, NULL, NULL);
+    if (CL_SUCCESS != err)
+    {
+        LogError("Error: clEnqueueUnmapMemObject returned %s\n", TranslateOpenCLError(err));
+    }
 
     return result;
 }
 
-int get_centroids(cl_float2* centroids, cl_float2* image_data, unsigned int width, unsigned int height) {
-	int k = 0;
-	// max out k at the un-aligned buffer size... don't think we'll ever get here
-	while (k < width*height) {
-		std::string centroid;
-		printf(" Centroid (e.g. x,y): ");
-		fflush(stdout);
-		std::getline(std::cin, centroid);
-		if (centroid.empty()) {
-			if (k == 0) {
-				printf("> Error: Need at least one centroid.\n");
-				continue;
-			}
-			break;
-		}
-
-		size_t i = centroid.find(',');
-		cl_float2 coord;
-		unsigned int index;
-		coord.x = (cl_float)std::stoi(centroid.substr(0, i));
-		coord.y = (cl_float)std::stoi(centroid.substr(i + 1));
-		index = coord.y*width + coord.x;
+int get_centroids(cl_float2* centroids, int k, cl_float2* image_data, unsigned int width, unsigned int height) {
+	for (int i = 0; i < k; i++) {
+		// max out k at the un-aligned buffer size... don't think we'll ever get here
+		int index = centroids[i].y*width + centroids[i].x;
 		if (index >= width*height) {
-			printf("> Error: coordinate out of bounds\n");
-			continue;
+			printf("> Error: coordinate out of bounds %f,%f\n", centroids[i].x, centroids[i].y);
+			return -1;
 		}
-		centroids[k].x = image_data[index].x;
-		centroids[k].y = image_data[index].y;
-		k++;
-		printf("> k=%i (u=%f, v=%f)\n", k, image_data[index].x, image_data[index].y);
+		centroids[i].x = image_data[index].x;
+		centroids[i].y = image_data[index].y;
+		printf("> C[%i] (u=%f, v=%f)\n", i, image_data[index].x, image_data[index].y);
 	}
-	return k;
+	return 0;
 }
 
 /*
@@ -857,22 +833,33 @@ int get_centroids(cl_float2* centroids, cl_float2* image_data, unsigned int widt
  *   - running OpenCL kernel
  *   - reading results of processing
  */
-int _tmain(int argc, TCHAR* argv[])
+int main(int argc, char* argv[])
 {
-	/*
-	 * Remind yourself to switch back to GPU target
-	 */
-	LogInfo("NOTE TO SELF\n");
-	LogInfo("- Change target to GPU\n");
-	LogInfo("- Change Platform Target to Intel (not NULL)\n");
-	LogInfo("\n\nPress any key to continue...\n");
-	getchar();
+	cl_int err;
+	ocl_args_d_t ocl;
+	cl_device_type deviceType = CL_DEVICE_TYPE_GPU;
+	LARGE_INTEGER perfFrequency, performanceCountNDRangeStart, performanceCountNDRangeStop;
 
 	/*
 	 * Get a file to process
 	 */
-	std::string filename("U:\\gpu-final-project\\fruit.bmp");
-	printf("Using default file %s\n", filename.c_str());
+
+	if (argc < 5) {
+		printf("required arguments: <input> <output> <x,y> <x,y> [<x,y> ...]");
+		printf("input:\tinput bmp file\n");
+		printf("output:\tinput bmp file\n");
+		printf("x,y:\tcoordinate in image as centroid seed (min 2)\n");
+	}
+	std::string filename(argv[1]);
+	std::string output_filename(argv[2]);
+	int k = (argc - 3);
+
+	printf("> input: %s\n", filename.c_str());
+	printf("> output: %s\n", filename.c_str());
+	printf("> --------------------------------------\n");
+	printf("> k = %i\n", k);
+	printf("> --------------------------------------\n");
+
 
 	/*
 	 * Read into memory
@@ -883,7 +870,10 @@ int _tmain(int argc, TCHAR* argv[])
 		LogError("Error: failed to malloc bmp_buffer.\n");
 		return -1;
 	}
-	printf("> width: %i\n> height: %i, filesize: %i\n", width, height, filesize);
+
+	printf("> width: %i\n", width);
+	printf("> height: %i\n", height);
+	printf("> filesize : %i\n", filesize);
 
 	/*
 	 * Allocate working buffers.
@@ -917,19 +907,20 @@ int _tmain(int argc, TCHAR* argv[])
 	/*
 	 * Get Centroid Pairs
 	 */
-	int k = get_centroids(centroids, image_data, width, height);
+	for (int i = 3; i < argc; i++) {
+		std::string centroid(argv[i]);
+		size_t comma = centroid.find(',');
+		// set coordinates
+		centroids[i-3].x = (cl_float)std::stoi(centroid.substr(0, comma));
+		centroids[i-3].y = (cl_float)std::stoi(centroid.substr(comma + 1));
+	}
+
+	// convert coordinates to values
+	if (-1 == get_centroids(centroids, k, image_data, width, height)) {
+		goto end;
+	}
+
 	cl_uchar2* centroid_cache = (cl_uchar2*)malloc(sizeof(cl_uchar2)*k);
-
-
-
-
-
-
-
-	cl_int err;
-	ocl_args_d_t ocl;
-	cl_device_type deviceType = CL_DEVICE_TYPE_CPU;
-	LARGE_INTEGER perfFrequency, performanceCountNDRangeStart, performanceCountNDRangeStop;
 
 	//initialize Open CL objects (context, queue, etc.)
 	if (CL_SUCCESS != SetupOpenCL(&ocl, deviceType))
@@ -977,12 +968,13 @@ int _tmain(int argc, TCHAR* argv[])
 
 		if (CL_SUCCESS != ExecuteClusteringKernel(&ocl, width, height))
 		{
-			return -1;
+			goto end;
 		}
 
 		ReadAndComputeMeanCentroids(&ocl, image_data, centroids, width, height, k);
 
 	} while (memcmp(centroid_cache, centroids, sizeof(centroid_cache)) != 0);
+
 	QueryPerformanceCounter(&performanceCountNDRangeStop);
 	QueryPerformanceFrequency(&perfFrequency);
 	LogInfo("NDRange performance counter time %f ms.\n",
@@ -996,49 +988,12 @@ int _tmain(int argc, TCHAR* argv[])
 	convert_buffer(bmp_buffer, image_data, CONVERT_CLBUF2BMP);
 	convert_colorspace(bmp_buffer, CONVERT_YUV2RGB);
 
-	std::string output_filename = "image_output.bmp";
 	write_bmp(output_filename.c_str(), bmp_buffer, filesize);
-	return 0;
 
-
-
-
-    // Regularly you wish to use OpenCL in your application to achieve greater performance results
-    // that are hard to achieve in other ways.
-    // To understand those performance benefits you may want to measure time your application spent in OpenCL kernel execution.
-    // The recommended way to obtain this time is to measure interval between two moments:
-    //   - just before clEnqueueNDRangeKernel is called, and
-    //   - just after clFinish is called
-    // clFinish is necessary to measure entire time spending in the kernel, measuring just clEnqueueNDRangeKernel is not enough,
-    // because this call doesn't guarantees that kernel is finished.
-    // clEnqueueNDRangeKernel is just enqueue new command in OpenCL command queue and doesn't wait until it ends.
-    // clFinish waits until all commands in command queue are finished, that suits your need to measure time.
-/*    bool queueProfilingEnable = true;
-    if (queueProfilingEnable)
-        QueryPerformanceCounter(&performanceCountNDRangeStart);
-    // Execute (enqueue) the kernel
-    if (CL_SUCCESS != ExecuteAddKernel(&ocl, arrayWidth, arrayHeight))
-    {
-        return -1;
-    }
-    if (queueProfilingEnable)
-        QueryPerformanceCounter(&performanceCountNDRangeStop);
-
-    // The last part of this function: getting processed results back.
-    // use map-unmap sequence to update original memory area with output buffer.
-  //  ReadAndVerify(&ocl, arrayWidth, arrayHeight, inputA, inputB);
-
-    // retrieve performance counter frequency
-    if (queueProfilingEnable)
-    {
-        QueryPerformanceFrequency(&perfFrequency);
-        LogInfo("NDRange performance counter time %f ms.\n",
-            1000.0f*(float)(performanceCountNDRangeStop.QuadPart - performanceCountNDRangeStart.QuadPart) / (float)perfFrequency.QuadPart);
-    }
-	*/
+end:
+	free(centroid_cache);
     _aligned_free(image_data);
 	_aligned_free(centroids);
-	_aligned_free(centroid_cache);
 	_aligned_free(centroid_assignments);
 	free(bmp_buffer);
 
