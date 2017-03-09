@@ -13,7 +13,7 @@
 \begin{document}
 \maketitle
 
-\section*{Overview}
+\section{Overview}
 
 K-Means Clustering is vector quantization algorithm. Given a set of k centroids
 (or initial values), it groups similar data points together by associating each
@@ -51,7 +51,7 @@ In order to run the program, a set of command line arguments must be provided.
 
 The BMP format is preferred for this project due to its simplicity. The header
 contains the dimensions of the image, and the pixels are stored as three bytes
-of Blue, Green, and Red in that order. \cite{bmp_wiki}
+of Blue, Green, and Red in that order. \cite{bmp-wiki}
 
 The BMP file is read into memory and OpenCL Buffers are allocated. In order to
 simplify the kernel processing, I extracted the image data from the bmp file in
@@ -127,23 +127,21 @@ average of \emph{105.23 ms}
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.6\textwidth]{fruit.png}
+    \includegraphics[width=0.5\textwidth]{fruit.png}
     \caption{Image\cite{fruit} before segmentation}
     \label{fig:fruit}
 \end{figure}
 
-
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.6\textwidth]{fruit-segmented-cpu.png}
+    \includegraphics[width=0.5\textwidth]{fruit-segmented-cpu.png}
     \caption{Image after segmentation (CPU)}
     \label{fig:fruit-segmented-cpu}
 \end{figure}
 
-
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.6\textwidth]{fruit-segmented-gpu.png}
+    \includegraphics[width=0.5\textwidth]{fruit-segmented-gpu.png}
     \caption{Image after segmentation (GPU)}
     \label{fig:fruit-segmented-gpu}
 \end{figure}
