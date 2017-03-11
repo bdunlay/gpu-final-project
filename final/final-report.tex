@@ -19,7 +19,7 @@ K-Means Clustering is vector quantization algorithm. Given a set of k centroids
 (or initial values), it groups similar data points together by associating each
 data point with its most similar centroid. Centroids are moved by taking the
 average value of the cluster, and this process is repeated until convergence. I
-have applied this algorithm with image processing with the goal of segmenting
+have applied this algorithm to image processing with the goal of segmenting
 an images by color.
 
 Given an integer $k$ and a set of $n$ data points $X \subset \mathbb{R}^d$ we aim
@@ -64,15 +64,15 @@ The RGB data is then converted into YUV colorspace as a pre-processing step.
 
 In my design specification, I calculated the AI of the kernel to be
 $\frac{K3D+K}{KD+D+1}$ where $K$ is the number of centroids, $D$ is dimension and
-D is the colorspace dimension. RGB is three dimensional while a commonly used
-colorspace YUV is two dimensional if we ignore the Y (luma) component. Instead of
-computing the distance between pixels and centroids in three dimensional space,
-the distance can be computed using two the two-dimensional space of YUV, reducing
-the computational complexity slightly. The \emph{Big O} complexity is examined
-further in this paper.
+D is the colorspace dimension. RGB is a three dimensional, but a commonly used
+colorspace in image processing is YUV, which is two dimensional (ignoring the Y
+-- luma -- component. Instead of computing the distance between pixels and
+centroids in three dimensional space, the distance can be computed using two the
+two-dimensional space of YUV, reducing the computational complexity slightly. The
+\emph{Big O} complexity is examined further in this paper.
 
-There are other reasons for choosing YUV colorspace, but I will not elaborate for
-this project.
+There are additional reasons for choosing YUV colorspace when doing image processing
+by color, but I will not elaborate as it is out of scope for this project.
 
 Interestingly, regardless of the dimension chosen, the AI remains nearly the same.
 Computing the AI with $K = 5$ and $D = 3$ (and using Floats) yields $.3448$. The AI
@@ -92,6 +92,45 @@ respective position.
 Back on the host, the centroid-assignment buffer is iterated over and centroid
 averages are calculated. These averages are compared against the cache, and if they
 do not match, the kernel is run again. This repeats until convergence.
+
+\subsection{Algorithmic Complexity}
+
+There are two primary stages of this algorithm, and I will analyize each of them individually.
+It should be noted that sinces the algorithm is iterative until convergence is reached, there
+is a unknown factor in which we will recalculate the following two steps. In most cases it
+should be much less than N.
+
+\subsubsection{Clustering}
+
+The first stage is clustering each pixel in the image with an associated group. For
+each pixel $x_i$ in the image, we compute the euclidean distance between $x_i$
+and each centroid $c_i$ with dimensionality $D$.
+
+$\BigO{NKD}$
+
+Where $N$ is the number of pixels in the image and $K$ is the number of centroids. As
+previously mentioned, there is a slight reduction in the algorithmic complexity by
+reducing the dimensionality of the colorspace from 3 (RGB) to 2 (U and V of YUV).
+
+$D$ could technically be omitted given that it is a constant that is likely smaller
+than $K$ and likely significantly smaller than $N$.
+
+\subsubsection{Mean centroid calculation}
+
+The second stage is to calculate the average value for all pixels in a particular
+cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$
+where we are calculating a summation of $D$ values over $N$ data points.
+
+\subsection{Arithmetic Intensity}
+
+The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference
+between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4)
+square root. $\text{FLOPS} = K(3D+1)$.
+
+The data access of the clustering step is $KD+D$ reads (where one byte is read per dimension)
+and the $1$ write (the cluster id) for a total of $KD+D+1$.
+
+The AI is therefore $\frac{K3D+K}{KD+D+1}$
 
 \section{Results}
 
@@ -146,14 +185,13 @@ average of \emph{105.23 ms}
     \label{fig:fruit-segmented-gpu}
 \end{figure}
 
-
 \section{Analysis}
 
 \subsection{Kernel Analysis}
 
-I ran the kernel with random data using the Visual Studio IDE's OpenCL Session Analyser to get
-an idea of kernel performance. Using random "image data" of 1024x800 and a $K$ of 5, I saw
-fairly good results.
+In order to perform kernel analysis, I created a kernel session and ran the kernel with random
+data using the Visual Studio IDE's OpenCL Session Analyser to get an idea of kernel performance.
+Using random "image data" of 1024x800 and a $K$ of 5, I saw fairly good results.
 
 \begin{itemize}
 \item Kernel EU utilization: \emph{86.8\%}.
@@ -164,50 +202,23 @@ fairly good results.
 My most latent operations were in accessing memory. I optimized this by accessing the pixel value
 only once rather than per distance calculation.
 
-I took a big performance hit by implementing the algorithm as a split CPU/GPU task. Looking
-at individual actual run analysis results, the individual kernel execution times had an average
-duration of \emph{670.775 us} and a total duration of \emph{10061.625 us}. The iterative
-calculations for mean centroid values and the memory transfer between CPU and GPU for each
-iteration accounted for the large majority of the runtime.
+In my run trials, my fruit image did not take many iterations to arrive at convergace. It's clear
+by comparing my overall clocked runtime average (~105ms) to the kernel analysis runtime (0.76ms)
+that dividing the algorithm in two (partially on the host machine and partially on the GPU), my
+implementation took a significant big performance hit.
 
-\subsection{Algorithmic Complexity}
+I further analyzed my program using OpenCL's analysis tools and found that my kernel had an
+average duration of \emph{670.775 us} and a total duration of \emph{10061.625 us}. That still
+leaves slightly more than 90\% of program execution time unaccounted for, which involved
+iterating once over the image and pixel assignments to calculate each interation's mean centroid
+values, as well as a copy of those centroids into a cached buffer, as well as a memory comparison
+of the precious cached centroids with the new centroids.
 
-There are two primary stages of this algorithm, and I will analyize each of them individually.
-It should be noted that sinces the algorithm is iterative until convergence is reached, there
-is a unknown factor in which we will recalculate the following two steps. In most cases it
-should be much less than N.
-
-\subsubsection{Clustering}
-
-The first stage is clustering each pixel in the image with an associated group. For
-each pixel $x_i$ in the image, we compute the euclidean distance between $x_i$
-and each centroid $c_i$ with dimensionality $D$.
-
-$\BigO{NKD}$
-
-Where $N$ is the number of pixels in the image and $K$ is the number of centroids. As
-previously mentioned, there is a slight reduction in the algorithmic complexity by
-reducing the dimensionality of the colorspace from 3 (RGB) to 2 (U and V of YUV).
-
-$D$ could technically be omitted given that it is a constant that is likely smaller
-than $K$ and likely significantly smaller than $N$.
-
-\subsubsection{Mean centroid calculation}
-
-The second stage is to calculate the average value for all pixels in a particular
-cluster $c_i = \frac{1}{|C_i|}\sum_{x \in C_i}x$. The algorithmic complexity is: $\BigO{ND}$
-where we are calculating a summation of $D$ values over $N$ data points.
-
-\subsection{Arithmetic Intensity}
-
-The arithmetic intensity for the clustering step is $K$ iterations of a (1) the difference
-between two centroids (2) squared and (3) summed over $D$ dimensions, followed by a (4)
-square root. $\text{FLOPS} = K(3D+1)$.
-
-The data access of the clustering step is $KD+D$ reads (where one byte is read per dimension)
-and the $1$ write (the cluster id) for a total of $KD+D+1$.
-
-The AI is therefore $\frac{K3D+K}{KD+D+1}$
+From my kernel analysis and program analysis, it's clear that despite a hybrid approach, the
+algorithm's performance improved dramatically. And, the component that was parallelized (centroid
+distance calculations and assignment) had very good execution unit utilization. But what is also
+clear is that even the simplest sequential operations (i.e. iteration over a large buffer) can have
+significant performance impacts on a program's operation.
 
 \section{Conclusion}
 
@@ -221,7 +232,6 @@ plenty of room for improvement. A good place to start would be in storing the pi
 centroid assignment in a respective centroid buffer -- perhaps using atomic index increments to synchronize
 data writes. Then, device-side enqueueing could be used to perform a reduction on each of those buffers
 to calculate the mean centroid values, until convergence.
-
 
 \begin{thebibliography}{9}
 
